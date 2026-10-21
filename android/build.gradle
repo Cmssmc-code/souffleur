@@ -1,0 +1,4 @@
+// Android Gradle Plugin 8.13.x = latest line compatible with Gradle 8.14.x (AGP 9 needs Gradle 9).
+plugins {
+    id 'com.android.application' version '8.13.2' apply false
+}

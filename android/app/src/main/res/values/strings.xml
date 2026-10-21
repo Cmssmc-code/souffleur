@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- launchUrl, hostName, assetStatements… are generated from app/build.gradle (resValue). -->
+<resources>
+    <string name="appName">Souffleur</string>
+    <string name="launcherName">Souffleur</string>
+
+    <string name="shortcutNewShort">Nouvel entretien</string>
+    <string name="shortcutNewLong">Créer un dossier d\'entretien</string>
+    <string name="shortcutDiagShort">Diagnostic</string>
+    <string name="shortcutDiagLong">Vérifier micro, audio et clé IA</string>
+
+    <string name="micDenied">Micro refusé. Autorisez-le dans Paramètres › Applications › Souffleur › Autorisations.</string>
+    <string name="noAppForLink">Aucune application ne peut ouvrir ce lien.</string>
+    <string name="noFilePicker">Aucun sélecteur de fichiers n\'est disponible sur cet appareil.</string>
+    <string name="fileSaved">Fichier enregistré.</string>
+    <string name="fileSaveFailed">Impossible d\'enregistrer le fichier.</string>
+    <string name="noWebView">Souffleur a besoin de Google Chrome (ou d\'Android System WebView) à jour. Installez ou mettez à jour Chrome, puis rouvrez Souffleur.</string>
+    <string name="offlineTitle">Pas de connexion</string>
+    <string name="offlineText">Souffleur n\'a pas pu se charger. Vérifiez le wifi ou les données mobiles, puis réessayez.</string>
+    <string name="offlineRetry">Réessayer</string>
+    <string name="installChrome">Installer Chrome</string>
+</resources>

@@ -1,0 +1,32 @@
+{
+  "name": "souffleur",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Souffleur — copilote d'entretien d'embauche (PWA, hors-ligne, fichier unique)",
+  "homepage": "https://cmssmc-code.github.io/souffleur/",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "build:strict": "node tools/build.mjs --strict",
+    "serve": "node tools/serve.mjs 8080 src",
+    "serve:dist": "node tools/serve.mjs 8081 dist/site",
+    "icons": "node tools/icons.mjs",
+    "check:pwa": "node tools/check-pwa.mjs",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node tests/unit-util.mjs && node tests/unit-store.mjs && node tests/unit-ai.mjs && node tests/unit-audio-vad.mjs",
+    "test:unit:ai": "node tests/unit-ai.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "test:browser": "node tests/store-idb.mjs && node tests/docs.test.mjs",
+    "test:pwa": "node tools/build.mjs --strict && node tools/check-pwa.mjs",
+    "test:all": "npm test && npm run test:browser && npm run test:pwa",
+    "test:docs": "node tests/docs.test.mjs",
+    "fixtures:docs": "node tests/fixtures/make-fixtures.mjs",
+    "shots": "node tests/final-shots.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

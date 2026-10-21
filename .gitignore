@@ -1,0 +1,25 @@
+# Dépendances et sorties de build
+node_modules/
+dist/
+*.log
+
+# Captures des tests Playwright
+tests/shots/
+tests/.cache/
+
+# Secrets : clés de signature, variables d'environnement
+*.jks
+*.keystore
+.env*
+
+# Android (TWA)
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini

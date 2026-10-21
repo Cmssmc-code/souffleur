@@ -1,0 +1,134 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+}
+
+// ---------------------------------------------------------------------------
+// Single source of truth for the web app URL and the version.
+//   -PsouffleurUrl=https://…/        (default: public GitHub Pages URL)
+//   -PsouffleurVersionName=2.0.0     (default: "version" of ../../package.json)
+//   -PsouffleurVersionCode=20000     (default: major*10000 + minor*100 + patch)
+// ---------------------------------------------------------------------------
+def appUrl = (project.findProperty('souffleurUrl') ?: 'https://cmssmc-code.github.io/souffleur/').toString()
+if (!appUrl.endsWith('/')) appUrl += '/'
+def appUri = new URI(appUrl)
+if (appUri.scheme != 'https' || !appUri.host) {
+    throw new GradleException("souffleurUrl doit être une URL https complète (reçu : ${appUrl})")
+}
+def appHost = appUri.host
+def appOrigin = "https://${appUri.authority}"
+def appPath = appUri.path ?: '/'
+def appPathPrefix = (appPath.length() > 1 && appPath.endsWith('/')) ? appPath.substring(0, appPath.length() - 1) : appPath
+
+// Static shortcuts need literal URLs (see res/xml-v25/shortcuts.xml): fail early if they drifted.
+def shortcutsXml = file('src/main/res/xml-v25/shortcuts.xml')
+if (shortcutsXml.exists()) {
+    def shortcutUrls = (shortcutsXml.getText('UTF-8') =~ /android:data="([^"]*)"/).collect { it[1] }
+    if (shortcutUrls.isEmpty() || shortcutUrls.any { !it.startsWith(appUrl) }) {
+        throw new GradleException("res/xml-v25/shortcuts.xml ne pointe pas vers ${appUrl} : mettez à jour les URL des raccourcis.")
+    }
+}
+
+def packageJson = rootProject.file('../package.json')
+def defaultVersionName = packageJson.exists() ? (new JsonSlurper().parse(packageJson).version ?: '1.0.0').toString() : '1.0.0'
+def appVersionName = (project.findProperty('souffleurVersionName') ?: defaultVersionName).toString()
+def versionParts = (appVersionName.tokenize('.-+') + ['0', '0', '0']).take(3).collect { it.isInteger() ? it.toInteger() : 0 }
+def appVersionCode = (project.findProperty('souffleurVersionCode') ?: (versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2])).toString().toInteger()
+if (appVersionCode < 1) appVersionCode = 1
+
+// Release signing: properties file kept OUTSIDE the repository.
+// storeFile / storePassword / keyAlias / keyPassword — written by tools/build-apk.ps1.
+def signingFile = file(System.getenv('SOUFFLEUR_SIGNING_PROPERTIES') ?: "${System.getProperty('user.home')}/.souffleur/release.properties")
+def signingProps = new Properties()
+if (signingFile.exists()) {
+    signingFile.withInputStream { signingProps.load(it) }
+}
+def hasSigning = signingProps.getProperty('storeFile') && file(signingProps.getProperty('storeFile')).exists()
+
+android {
+    namespace = 'io.github.cmssmc_code.souffleur'
+    compileSdk = 36
+    buildToolsVersion = '36.0.0'
+
+    defaultConfig {
+        applicationId = 'io.github.cmssmc_code.souffleur'
+        minSdk = 24
+        targetSdk = 36
+        versionCode = appVersionCode
+        versionName = appVersionName
+
+        manifestPlaceholders = [
+            hostName  : appHost,
+            pathPrefix: appPathPrefix,
+        ]
+
+        resValue 'string', 'launchUrl', appUrl
+        resValue 'string', 'appOrigin', appOrigin
+        resValue 'string', 'webManifestUrl', appUrl + 'manifest.webmanifest'
+        resValue 'string', 'providerAuthority', 'io.github.cmssmc_code.souffleur.fileprovider'
+        resValue 'string', 'assetStatements',
+            '[{\\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], ' +
+            '\\"target\\": {\\"namespace\\": \\"web\\", \\"site\\": \\"' + appOrigin + '\\"}}]'
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigning) {
+                storeFile = file(signingProps.getProperty('storeFile'))
+                storePassword = signingProps.getProperty('storePassword')
+                keyAlias = signingProps.getProperty('keyAlias')
+                keyPassword = signingProps.getProperty('keyPassword') ?: signingProps.getProperty('storePassword')
+                enableV1Signing = false // minSdk 24: APK Signature Scheme v2+ only
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig = hasSigning ? signingConfigs.release : null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        // lintVital needs network/SDK extras on some machines: never block the release build on it.
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
+    // Not published on Play: no encrypted dependency metadata block in the APK.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*.version', 'META-INF/*.kotlin_module', 'kotlin/**', 'DebugProbesKt.bin']
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+    implementation 'androidx.webkit:webkit:1.17.1'
+}
+
+tasks.register('printSouffleurConfig') {
+    doLast {
+        println "SOUFFLEUR_URL=${appUrl}"
+        println "SOUFFLEUR_VERSION_NAME=${appVersionName}"
+        println "SOUFFLEUR_VERSION_CODE=${appVersionCode}"
+        println "SOUFFLEUR_SIGNED=${hasSigning}"
+    }
+}

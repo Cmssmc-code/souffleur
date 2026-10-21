@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WebView fallback: light variant (values-night overrides). System bars are styled in code. -->
+    <style name="Theme.Souffleur.Web" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/backgroundColor</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/backgroundColor</item>
+        <item name="android:colorPrimaryDark">@color/backgroundColor</item>
+    </style>
+</resources>

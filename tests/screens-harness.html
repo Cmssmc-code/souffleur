@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Harnais — écrans secondaires Souffleur</title>
+<!-- Vrai design si présent ; sinon styles de repli ci-dessous (html.no-core-css). -->
+<link rel="stylesheet" href="../src/styles.css" onerror="document.documentElement.classList.add('no-core-css')">
+<link rel="stylesheet" href="../src/screens.css">
+<style>
+/* ---- Repli minimal des classes partagées (uniquement si styles.css est absent) ---- */
+html.no-core-css { color-scheme: light dark; --accent: #0071e3; --ok: #34c759; --warn: #ff9f0a; --err: #ff3b30; --them: #5e5ce6; --me: #28b24b; }
+html.no-core-css[data-theme="dark"] { color-scheme: dark; }
+html.no-core-css[data-theme="light"] { color-scheme: light; }
+@media (prefers-color-scheme: dark) { html.no-core-css:not([data-theme="light"]) { --accent: #0a84ff; } }
+html.no-core-css body { margin: 0; min-height: 100vh; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif; color: #1d1d1f;
+  background: radial-gradient(1200px 700px at 10% -10%, #dfe9ff 0, transparent 60%), radial-gradient(900px 600px at 110% 10%, #f3e6ff 0, transparent 55%), linear-gradient(#f5f5f7, #eef0f5); background-attachment: fixed; }
+@media (prefers-color-scheme: dark) { html.no-core-css:not([data-theme="light"]) body { color: #f5f5f7; background: radial-gradient(1200px 700px at 10% -10%, #1a2a4a 0, transparent 60%), radial-gradient(900px 600px at 110% 10%, #2a1a40 0, transparent 55%), linear-gradient(#0b0b0f, #111318); background-attachment: fixed; } }
+html.no-core-css[data-theme="dark"] body { color: #f5f5f7; background: radial-gradient(1200px 700px at 10% -10%, #1a2a4a 0, transparent 60%), radial-gradient(900px 600px at 110% 10%, #2a1a40 0, transparent 55%), linear-gradient(#0b0b0f, #111318); background-attachment: fixed; }
+.no-core-css .glass, .no-core-css .card { background: color-mix(in srgb, Canvas 62%, transparent); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid color-mix(in srgb, CanvasText 9%, transparent); border-radius: 24px; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -12px rgba(0,0,0,.18); }
+.no-core-css .card-pad { padding: 18px 20px; }
+.no-core-css .topbar { position: sticky; top: 0; z-index: 5; padding: 12px 20px; max-width: 860px; margin: 0 auto; box-sizing: border-box; backdrop-filter: blur(20px); }
+.no-core-css .h1 { font-size: 34px; font-weight: 650; letter-spacing: -.025em; line-height: 1.1; }
+.no-core-css .h2 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+.no-core-css .h3 { font-size: 17px; font-weight: 600; }
+.no-core-css .muted { opacity: .62; } .no-core-css .small { font-size: 13.5px; }
+.no-core-css .row { display: flex; align-items: center; gap: 10px; }
+.no-core-css .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.no-core-css .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  background: color-mix(in srgb, CanvasText 6%, transparent); color: inherit; font: inherit; font-weight: 600; cursor: pointer; transition: transform .18s cubic-bezier(.2,.8,.2,1); }
+.no-core-css .btn:active { transform: scale(.97); } .no-core-css .btn:disabled { opacity: .5; }
+.no-core-css .btn svg, .no-core-css .icon-btn svg { width: 18px; height: 18px; }
+.no-core-css .btn-primary { background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 8px 20px -10px var(--accent), inset 0 1px 0 rgba(255,255,255,.3); }
+.no-core-css .btn-ghost { background: color-mix(in srgb, CanvasText 5%, transparent); }
+.no-core-css .btn-danger { background: var(--err); color: #fff; border-color: transparent; }
+.no-core-css .btn-sm { min-height: 34px; padding: 0 13px; font-size: 14px; }
+.no-core-css .icon-btn { width: 40px; height: 40px; display: inline-grid; place-items: center; border-radius: 50%; border: 0; background: color-mix(in srgb, CanvasText 6%, transparent); color: inherit; cursor: pointer; }
+.no-core-css .pill, .no-core-css .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: color-mix(in srgb, CanvasText 8%, transparent); white-space: nowrap; }
+.no-core-css .pill svg { width: 12px; height: 12px; }
+.no-core-css .pill-ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: color-mix(in srgb, var(--ok) 70%, CanvasText); }
+.no-core-css .pill-warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: color-mix(in srgb, var(--warn) 70%, CanvasText); }
+.no-core-css .pill-err { background: color-mix(in srgb, var(--err) 16%, transparent); color: color-mix(in srgb, var(--err) 75%, CanvasText); }
+.no-core-css .seg { display: inline-flex; padding: 3px; border-radius: 12px; background: color-mix(in srgb, CanvasText 7%, transparent); gap: 2px; }
+.no-core-css .seg button { border: 0; background: none; color: inherit; font: inherit; font-size: 14px; font-weight: 500; padding: 6px 14px; border-radius: 9px; cursor: pointer; }
+.no-core-css .seg button.on { background: Canvas; box-shadow: 0 1px 4px rgba(0,0,0,.15); font-weight: 600; }
+.no-core-css .switch { position: relative; display: inline-block; width: 51px; height: 31px; flex: none; }
+.no-core-css .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.no-core-css .switch span { position: absolute; inset: 0; border-radius: 999px; background: color-mix(in srgb, CanvasText 18%, transparent); transition: .25s; cursor: pointer; }
+.no-core-css .switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+.no-core-css .switch input:checked + span { background: var(--ok); } .no-core-css .switch input:checked + span::after { transform: translateX(20px); }
+.no-core-css .list { padding: 0; overflow: hidden; }
+.no-core-css .list-row { display: flex; align-items: center; gap: 12px; padding: 13px 18px; min-height: 30px; border-top: 1px solid color-mix(in srgb, CanvasText 8%, transparent); }
+.no-core-css .list-row:first-child { border-top: 0; }
+.no-core-css .field { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; font-weight: 600; }
+.no-core-css .field input, .no-core-css .field select { height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, CanvasText 13%, transparent); background: color-mix(in srgb, CanvasText 4%, transparent); color: inherit; font: inherit; font-weight: 400; }
+.no-core-css .meter { height: 6px; border-radius: 3px; background: color-mix(in srgb, CanvasText 10%, transparent); overflow: hidden; }
+.no-core-css .meter i { display: block; height: 100%; width: calc(var(--v, 0) * 100%); background: linear-gradient(90deg, var(--ok), var(--accent)); border-radius: inherit; transition: width .12s linear; }
+.no-core-css .spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid color-mix(in srgb, CanvasText 15%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.no-core-css .md p { margin: .3em 0; } .no-core-css .md ul { margin: .3em 0; padding-left: 1.2em; }
+.no-core-css .empty { text-align: center; }
+.no-core-css .who-them { color: inherit; } .no-core-css .who-me { color: inherit; }
+/* Feuille / toasts du stub */
+.hx-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.28); backdrop-filter: blur(4px); display: grid; place-items: center; padding: 16px; }
+.hx-sheet { width: min(560px, 100%); max-height: 92vh; overflow: auto; box-sizing: border-box; padding: 18px 22px 22px; }
+.hx-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.hx-sheet-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.hx-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.hx-toast { padding: 10px 16px; border-radius: 14px; font-size: 14px; background: color-mix(in srgb, Canvas 80%, transparent); backdrop-filter: blur(20px); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<script src="screens-fakes.js"></script>
+<script src="../src/js/util.js"></script>
+<script>
+/* ======================= Stubs du contrat (store, ai, audio, ui, app) ======================= */
+(function (S) {
+  'use strict';
+  const U = S.util;
+  const qs = new URLSearchParams(location.search);
+  const now = Date.now();
+  const iso = (ms) => new Date(ms).toISOString();
+
+  /* ---------- S.store (mémoire) ---------- */
+  let settings = { geminiKey: qs.has('nokey') ? '' : 'AIzaSyFAKE-harness-key-000000000000', claudeKey: '', rememberKeys: true, provider: 'auto',
+    models: { answer: 'auto', fast: 'auto', prep: 'auto' }, theme: qs.get('theme') || 'auto', fontScale: 1, lang: 'fr-FR', autoAnswer: true, answerDelayMs: 900, onboarded: true };
+  const prepQs = [
+    { id: 'q1', q: 'Présentez-vous.', a: '**Contrôleur de gestion puis RAF, je fiabilise les chiffres et pilote les clôtures.**\n- **Parcours** : 8 ans en finance d’entreprise', tags: [] },
+    { id: 'q2', q: 'Pourquoi ce poste ?', a: '**Le poste combine pilotage budgétaire et impact public.**\n- **Missions** : budget, contrôle interne', tags: [] },
+    { id: 'q3', q: 'Parlez-moi d’une clôture difficile.', a: '**J’ai réduit la clôture de 10 à 5 jours.**\n- **Méthode** : rétroplanning partagé', tags: [] }
+  ];
+  const tx = [
+    { t: 4000, who: 'them', text: 'Bonjour, merci d’être là. Pouvez-vous vous présenter ?' },
+    { t: 9000, who: 'me', text: 'Bonjour, je suis contrôleur de gestion depuis huit ans, aujourd’hui responsable administratif et financier.' },
+    { t: 61000, who: 'them', text: 'Pourquoi notre direction vous intéresse-t-elle ?' },
+    { t: 66000, who: 'me', text: 'Pour l’impact des politiques énergétiques et la dimension budgétaire du poste.' },
+    { t: 140000, who: 'mixed', text: 'Comment gérez-vous une clôture sous contrainte de délai ?' },
+    { t: 150000, who: 'me', text: 'Avec un rétroplanning partagé et des revues hebdomadaires.' }
+  ];
+  const recapMd = '## Synthèse\nEntretien **fluide** de 32 min avec la cheffe de bureau. Bon alignement sur le pilotage budgétaire.\n\n## Questions posées\n- Présentez-vous — *réponse claire*\n- Pourquoi notre direction ? — *à étayer avec un exemple chiffré*\n\n## Points forts\n- Expérience des clôtures\n- Discours structuré\n\n## À améliorer\n- Citer davantage de chiffres\n\n## À relancer\n- Envoyer le mail sous 24 h\n\n## Mail de remerciement\nObjet : Merci pour notre échange — Chargé de mission budgétaire\n\nBonjour Madame Martin,\n\nJe vous remercie pour notre échange de ce jour…\n\nBien cordialement,';
+  const dossiers = new Map();
+  dossiers.set('d1', {
+    id: 'd1', name: 'Chargé de mission budgétaire · DGEC', company: 'DGEC', role: 'Chargé de mission budgétaire', date: '2026-10-22T14:00', mode: 'visio',
+    interviewer: 'Madame Martin', notes: '', docs: [],
+    prep: { pitch: 'Pitch', questions: prepQs, askThem: [], keyFacts: [], watchouts: [], generatedAt: iso(now), model: 'gemini-3-flash-preview' },
+    sessions: [
+      { id: 's1', kind: 'live', startedAt: iso(now - 86400000), endedAt: iso(now - 86400000 + 1920000), transcript: tx,
+        answers: [{ t: 5000, question: 'Pouvez-vous vous présenter ?', answer: prepQs[0].a, source: 'prep', model: '' }, { t: 62000, question: 'Pourquoi notre direction vous intéresse-t-elle ?', answer: '**L’impact public.**\n- **Budget** : 40 M€ suivis', source: 'ai', model: 'gemini-3-flash-preview' }],
+        scores: null, recap: recapMd },
+      { id: 's2', kind: 'live', startedAt: iso(now - 3600000), endedAt: iso(now - 3600000 + 1500000), transcript: tx.slice(0, 4), answers: [], scores: null, recap: null },
+      { id: 's3', kind: 'training', startedAt: iso(now - 7200000), endedAt: iso(now - 7000000), transcript: [], answers: [],
+        scores: [{ question: 'Présentez-vous.', answer: 'Je suis…', score: 8, feedback: '- ✓ Clair' }, { question: 'Vos défauts ?', answer: 'Je suis perfectionniste', score: 4, feedback: '- → Cliché' }], recap: null }
+    ],
+    createdAt: iso(now - 864000000), updatedAt: iso(now)
+  });
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  S.store = {
+    async init() {},
+    async list() { return [...dossiers.values()].map(clone); },
+    async get(id) { const d = dossiers.get(id); return d ? clone(d) : null; },
+    async create(p) { const d = Object.assign({ id: U.uid(), name: '', company: '', role: '', date: '', mode: 'visio', interviewer: '', notes: '', docs: [], prep: null, sessions: [], createdAt: iso(Date.now()), updatedAt: iso(Date.now()) }, p); dossiers.set(d.id, d); return clone(d); },
+    async save(d) { d.updatedAt = iso(Date.now()); dossiers.set(d.id, clone(d)); S.bus.emit('store:changed', { id: d.id }); window.__saves = (window.__saves || 0) + 1; return clone(d); },
+    async remove(id) { dossiers.delete(id); },
+    async usage() { return { dossiers: dossiers.size, bytes: 48213, persistent: false }; },
+    settings() { return clone(settings); },
+    setSettings(patch) { settings = Object.assign({}, settings, patch); S.bus.emit('settings:changed', clone(settings)); applyTheme(); }
+  };
+  window.__dossiers = dossiers;
+  function applyTheme() { const t = settings.theme; if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+  applyTheme();
+
+  /* ---------- S.ai (mock) ---------- */
+  const TQ = ['Présentez-vous en deux minutes.', 'Comment avez-vous fiabilisé une clôture mensuelle sous forte contrainte de délai ?', 'Quel budget avez-vous déjà piloté, et avec quels résultats ?', 'Comment réagiriez-vous face à un dépassement budgétaire en cours d’année ?', 'Pourquoi quitter le privé pour une administration centrale ?', 'Quelles sont vos prétentions salariales ?', 'Avez-vous des questions à nous poser ?'];
+  const keyed = () => !!(settings.geminiKey || settings.claudeKey);
+  S.ai = {
+    hasKey: () => keyed(),
+    async discover() { await U.sleep(300); return { gemini: ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'], claude: settings.claudeKey ? ['claude-haiku-4-5', 'claude-sonnet-4-5'] : [] }; },
+    pick(p) { return [{ provider: 'gemini', model: p === 'fast' ? 'gemini-2.5-flash-lite' : 'gemini-3-flash-preview' }]; },
+    async test() {
+      await U.sleep(500);
+      const out = [];
+      if (settings.geminiKey) out.push({ provider: 'gemini', model: 'gemini-3-flash-preview', ok: !qs.has('badkey'), ms: 642, error: qs.has('badkey') ? 'Clé Gemini refusée (400) — vérifiez-la dans les réglages.' : null });
+      if (settings.claudeKey) out.push({ provider: 'claude', model: 'claude-haiku-4-5', ok: false, ms: 310, error: 'Clé Claude refusée (401) — vérifiez-la dans les réglages.' });
+      return out;
+    },
+    async trainingNext(d, asked) { await U.sleep(450); if (qs.has('ainext-fail')) throw new Error('Quota Gemini atteint (429).'); return { question: TQ[asked.length % TQ.length] }; },
+    async trainingFeedback(d, q, a) {
+      await U.sleep(650);
+      if (qs.has('aifb-fail')) throw Object.assign(new Error('Gemini ne répond pas assez vite.'), { code: 'TIMEOUT' });
+      window.__lastAnswer = a;
+      return { score: 7, feedback: '- ✓ Réponse **structurée** et ancrée dans votre expérience.\n- → Ajoutez un **chiffre** de résultat (délai, montant).', better: '**J’ai ramené la clôture de 10 à 5 jours en pilotant un rétroplanning partagé.**\n- **Contexte** : 3 filiales, équipe de 4\n- **Action** : revues hebdomadaires, check-lists\n- **Résultat** : −50 % de délai, zéro réserve CAC', model: 'gemini-3-flash-preview' };
+    },
+    async recap() { await U.sleep(1500); if (qs.has('recap-fail')) throw Object.assign(new Error('Aucun modèle IA n’a répondu.'), { code: 'ALL_FAILED' }); return recapMd.replace('fluide', 'très fluide'); }
+  };
+
+  /* ---------- S.audio (mock) ---------- */
+  const em = U.emitter();
+  S.audio = {
+    support() { return { getUserMedia: true, getDisplayMedia: true, displayAudio: true, webSpeech: true, audioWorklet: true, wakeLock: 'wakeLock' in navigator, docPiP: 'documentPictureInPicture' in window }; },
+    presets: [
+      { id: 'visio-casque', label: 'Visio sur ce PC (Meet / Teams)', them: 'display', themEngine: 'cloud', me: 'mic', meEngine: 'webspeech', needsKey: true },
+      { id: 'haut-parleur', label: 'Haut-parleur ou téléphone à côté', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false },
+      { id: 'visio-hp', label: 'Visio sur ce PC, son sur haut-parleurs', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false },
+      { id: 'micro-cloud', label: 'Micro seul, transcription IA (bruit, accents)', them: null, me: 'mic', meEngine: 'cloud', mixed: true, needsKey: true }
+    ],
+    on: (e, fn) => em.on(e, fn),
+    async testMic(ms) {
+      if (qs.has('mic-denied')) { await U.sleep(200); return { ok: false, peak: 0, code: 'MIC_DENIED', error: 'Accès au micro refusé.' }; }
+      const t0 = Date.now();
+      while (Date.now() - t0 < ms) { await U.sleep(66); em.emit('level', { who: 'test', rms: .45 + .35 * Math.abs(Math.sin((Date.now() - t0) / 180)) }); }
+      return { ok: true, peak: 0.31, label: 'Micro (Realtek Audio)' };
+    }
+  };
+
+  /* ---------- S.ui (stub fidèle au contrat) ---------- */
+  const P = {
+    plus: 'M12 5v14M5 12h14', mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3', waveform: 'M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4',
+    sparkles: 'M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z', doc: 'M7 3h7l5 5v13H7zM14 3v5h5', upload: 'M12 16V4M7 9l5-5 5 5M5 20h14',
+    play: 'M8 5l11 7-11 7z', pause: 'M8 5v14M16 5v14', stop: 'M7 7h10v10H7z', gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-1-3-2 .2-1.5-1.5L16.7 4l-3-1-1 2h-1.4l-1-2-3 1 .2 2L6 7.5 4 7.3l-1 3 2 1v1.4l-2 1 1 3 2-.2L7.5 18l-.2 2 3 1 1-2h1.4l1 2 3-1-.2-2 1.5-1.5 2 .2 1-3-2-1z',
+    'chevron-left': 'M15 5l-7 7 7 7', 'chevron-right': 'M9 5l7 7-7 7', 'chevron-down': 'M5 9l7 7 7-7', trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+    export: 'M12 15V3M7 8l5-5 5 5M5 13v7h14v-7', import: 'M12 3v12M7 10l5 5 5-5M5 13v7h14v-7', check: 'M5 12.5l4.5 4.5L19 7', warning: 'M12 3l10 18H2zM12 10v5M12 18h.01', xmark: 'M6 6l12 12M18 6L6 18',
+    pip: 'M3 5h18v14H3zM12 12h7v5h-7z', keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10', clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2', person: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+    person2: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 20a7 7 0 0 1 14 0M16 4a3.5 3.5 0 0 1 0 7M22 20a7 7 0 0 0-4-6.3', bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
+    copy: 'M9 9h11v11H9zM5 15H4V4h11v1', download: 'M12 4v12M7 11l5 5 5-5M5 20h14', eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z', 'eye-slash': 'M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6A17 17 0 0 0 2 12s4 7 10 7a9.8 9.8 0 0 0 5.4-1.6',
+    info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v6M12 7.5h.01', graduation: 'M2 9l10-5 10 5-10 5zM6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6', list: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
+    phone: 'M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z', video: 'M3 6h12v12H3zM15 10l6-3v10l-6-3', speaker: 'M4 9h4l5-4v14l-5-4H4zM17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11',
+    shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z', 'wifi-off': 'M3 3l18 18M8.5 16.5a5 5 0 0 1 7 0M5 12.5a10 10 0 0 1 5-2.6M14.5 10a10 10 0 0 1 4.5 2.5M2 8.8a15 15 0 0 1 4.5-2.6M12 20h.01', home: 'M3 11l9-8 9 8M5 10v10h14V10', edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4'
+  };
+  const icon = (n) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[n] || 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z'}"/></svg>`;
+  const h = (html) => { const t = document.createElement('template'); t.innerHTML = String(html).trim(); return t.content.firstElementChild; };
+  let toastsBox = null;
+  function toast(msg, kind) {
+    if (!toastsBox) { toastsBox = h('<div class="hx-toasts"></div>'); document.body.appendChild(toastsBox); }
+    const el = h(`<div class="hx-toast" data-kind="${kind || 'info'}"></div>`); el.textContent = msg; toastsBox.appendChild(el);
+    window.__toasts = (window.__toasts || []).concat({ msg, kind });
+    setTimeout(() => el.remove(), 3500);
+  }
+  S.bus.on('toast', (t) => toast(t.msg, t.kind));
+  function sheet(o) {
+    const ov = h(`<div class="hx-overlay"><div class="hx-sheet glass card" role="dialog" aria-modal="true"><div class="hx-sheet-head"><div class="h3">${U.esc(o.title || '')}</div><button class="icon-btn" data-x aria-label="Fermer">${icon('xmark')}</button></div><div class="hx-sheet-body"></div><div class="hx-sheet-actions"></div></div></div>`);
+    const body = ov.querySelector('.hx-sheet-body');
+    if (o.body instanceof Element) body.appendChild(o.body); else body.innerHTML = o.body || '';
+    const act = ov.querySelector('.hx-sheet-actions');
+    const close = () => ov.remove();
+    (o.actions || []).forEach((a) => { const b = h(`<button class="btn btn-${a.kind === 'primary' ? 'primary' : a.kind === 'danger' ? 'danger' : 'ghost'}">${U.esc(a.label)}</button>`); b.onclick = () => { a.onClick && a.onClick(); if (a.close !== false) close(); }; act.appendChild(b); });
+    if (!(o.actions || []).length) act.remove();
+    ov.querySelector('[data-x]').onclick = close;
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    document.body.appendChild(ov);
+    return { el: ov, close };
+  }
+  function confirm(o) {
+    return new Promise((res) => {
+      let done = false; const fin = (v) => { if (!done) { done = true; res(v); } };
+      sheet({ title: o.title, body: `<p>${U.esc(o.text || '')}</p>`, actions: [{ label: 'Annuler', kind: 'ghost', onClick: () => fin(false) }, { label: o.okLabel || 'OK', kind: o.danger ? 'danger' : 'primary', onClick: () => fin(true) }] });
+    });
+  }
+  S.ui = { icon, h, sheet, confirm, toast, relTime: (d) => new Date(d).toLocaleString('fr-FR') };
+
+  /* ---------- S.app (routeur minimal) ---------- */
+  const routes = {};
+  let current = null;
+  function parse() { const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent); return { name: parts[0] || '', params: { id: parts[1] || '', sessionId: parts[2] || '' } }; }
+  function route() {
+    const r = parse(); if (current && current.leave) current.leave();
+    current = routes[r.name] || null;
+    const root = document.getElementById('app');
+    if (!current) { root.innerHTML = `<div class="sc-body" style="padding:40px"><div class="h1">Accueil (stub)</div><p class="muted">Route « ${U.esc(r.name)} »</p></div>`; return; }
+    current.render(root, r.params);
+  }
+  S.app = { register(n, def) { routes[n] = def; }, go(hash) { if (location.hash === hash) route(); else location.hash = hash; }, params: () => parse().params };
+  window.addEventListener('hashchange', route);
+  document.addEventListener('DOMContentLoaded', () => setTimeout(route, 0));
+})(window.Souffleur);
+</script>
+<script src="../src/js/screens.js"></script>
+</body>
+</html>

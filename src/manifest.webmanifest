@@ -1,0 +1,40 @@
+{
+  "id": "./",
+  "name": "Souffleur — copilote d'entretien",
+  "short_name": "Souffleur",
+  "description": "Copilote d'entretien d'embauche : transcription de l'appel Meet ou Teams, réponses préparées instantanées et réponses IA en direct, entraînement et récap.",
+  "lang": "fr-FR",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
+  "categories": ["productivity", "business", "education"],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "edge_side_panel": { "preferred_width": 420 },
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nouvel entretien",
+      "short_name": "Nouveau",
+      "description": "Créer un dossier d'entretien",
+      "url": "./#/dossier/new",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Diagnostic",
+      "short_name": "Diagnostic",
+      "description": "Vérifier micro, audio de l'onglet, clé IA et mode hors-ligne",
+      "url": "./#/diag",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

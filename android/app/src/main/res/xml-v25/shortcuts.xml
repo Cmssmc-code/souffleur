@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Same shortcuts as the web manifest.
+    Intent data must be a literal URL (the system parses shortcut intents with its own resources,
+    so @string references are not resolved). app/build.gradle checks these URLs match souffleurUrl.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new"
+        android:shortcutId="new-interview"
+        android:shortcutLongLabel="@string/shortcutNewLong"
+        android:shortcutShortLabel="@string/shortcutNewShort">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://cmssmc-code.github.io/souffleur/#/dossier/new"
+            android:targetClass="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity"
+            android:targetPackage="io.github.cmssmc_code.souffleur" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_diag"
+        android:shortcutId="diagnostic"
+        android:shortcutLongLabel="@string/shortcutDiagLong"
+        android:shortcutShortLabel="@string/shortcutDiagShort">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://cmssmc-code.github.io/souffleur/#/diag"
+            android:targetClass="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity"
+            android:targetPackage="io.github.cmssmc_code.souffleur" />
+    </shortcut>
+</shortcuts>

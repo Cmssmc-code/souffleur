@@ -1,0 +1,19 @@
+// Souffleur — Trusted Web Activity (TWA) wrapper for https://cmssmc-code.github.io/souffleur/
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'Souffleur'
+include ':app'
