@@ -555,3 +555,6 @@
     transition-duration: .01ms !important;
   }
 }
+
+/* Clés API : masquées sans type=password, pour que le gestionnaire de mots de passe ne les remplisse pas */
+.secret-input { -webkit-text-security: disc; text-security: disc; font-family: var(--font); letter-spacing: .08em; }

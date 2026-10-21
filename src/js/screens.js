@@ -1220,7 +1220,7 @@
       <div class="st-key-head"><div class="st-key-name">${tile(p.icon, p.color)}<b>${p.name}</b>${p.badge}</div>
         <a class="small st-link" href="${p.url}" target="_blank" rel="noopener noreferrer">${p.linkLabel}</a></div>
       <div class="st-key-field">
-        <input type="password" data-key="${k}" value="${esc(v)}" placeholder="${p.placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Clé ${p.name}">
+        <input type="text" class="secret-input" name="sf-${k}" data-1p-ignore data-lpignore="true" data-form-type="other" data-key="${k}" value="${esc(v)}" placeholder="${p.placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Clé ${p.name}">
         <button type="button" class="icon-btn" data-act="eye" aria-label="Afficher la clé" title="Afficher la clé">${icon('eye')}</button>
         <button type="button" class="btn btn-sm btn-ghost" data-act="test" data-provider="${p.id}">Tester</button>
       </div>
@@ -1416,8 +1416,8 @@
       },
       eye: (b) => {
         const input = b.parentElement.querySelector('input');
-        const show = input.type === 'password';
-        input.type = show ? 'text' : 'password';
+        const show = input.classList.contains('secret-input');
+        input.classList.toggle('secret-input', !show);
         b.innerHTML = icon(show ? 'eye-slash' : 'eye');
         b.setAttribute('aria-label', show ? 'Masquer la clé' : 'Afficher la clé');
         b.title = b.getAttribute('aria-label');
@@ -1981,7 +1981,7 @@
             <li>Collez-la ci-dessous.</li>
           </ol>
           <div class="st-key-field">
-            <input type="password" data-ob="key" value="${esc(data.key)}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Clé Gemini">
+            <input type="text" class="secret-input" name="sf-ob-key" data-1p-ignore data-lpignore="true" data-form-type="other" data-ob="key" value="${esc(data.key)}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Clé Gemini">
             <button type="button" class="icon-btn" data-act="paste" aria-label="Coller" title="Coller">${icon('copy')}</button>
             <button type="button" class="btn btn-sm btn-ghost" data-act="verify">Vérifier</button>
           </div>
