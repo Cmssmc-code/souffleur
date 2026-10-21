@@ -1796,7 +1796,7 @@
     bindSeg(root, '[data-b="delay"]', (v) => setSettings({ answerDelayMs: Number(v) }));
     $('[data-act="start"]', root).addEventListener('click', () => onStartClick(null));
     $('[data-act="manual"]', root).addEventListener('click', () => beginSession(null, { manual: true }));
-    $('[data-act="sim"]', root).addEventListener('click', () => beginSession(null, { manual: true, sim: true }));
+    $('[data-act="sim"]', root).addEventListener('click', onSimClick);
     const rs = $('[data-act="resume"]', root);
     if (rs) rs.addEventListener('click', () => onStartClick(orphan));
     // Vumètre automatique si le micro est déjà autorisé (aucune invite).
@@ -1961,6 +1961,37 @@
     });
   }
 
+  // Simulation : l'IA joue le recruteur (voix de synthèse), votre micro est écouté comme pendant un vrai entretien.
+  const SIM_PRESET = { id: 'simulation', label: 'Simulation', them: null, me: 'mic', meEngine: 'webspeech', mixed: false };
+  function onSimClick() {
+    if (!L || L.running || L.starting) return;
+    L.starting = true;
+    subscribeAudio(); // synchrone : aucun await avant start()
+    let started;
+    try { started = Promise.resolve(S.audio.start(SIM_PRESET, { hint: hintFor(L.d) })); } catch (e) { started = Promise.reject(e); }
+    stopMeter();
+    const myL = L;
+    started.then(() => {
+      if (!L || L !== myL || L.running) { try { S.audio.stop({ drainMs: 0 }); } catch (e) { /* rien */ } return; }
+      L.starting = false;
+      L.audio = true;
+      beginSession(null, { preset: SIM_PRESET, sim: true });
+    }, (e) => {
+      if (L !== myL) return;
+      L.starting = false;
+      unsubscribeAudio();
+      toast(`${startErrorText(e).title} : simulation sans transcription de votre voix.`, 'warn', { duration: 7000 });
+      beginSession(null, { manual: true, sim: true });
+    });
+  }
+  // Pendant que la voix de synthèse parle (et juste après), le micro l'entend : ce n'est pas vous.
+  function simEcho(who, text) {
+    if (!L || !L.sim || who === 'them') return false;
+    const speaking = 'speechSynthesis' in window && speechSynthesis.speaking;
+    if (speaking || Date.now() - (L.ttsEndAt || 0) < 700) return true;
+    return !!(L.simLastQ && text && similarity(text, L.simLastQ) > 0.6);
+  }
+
   function subscribeAudio() {
     unsubscribeAudio();
     if (!S.audio || !S.audio.on) return;
@@ -2030,6 +2061,7 @@
   /* ---------- Vue en cours ---------- */
   function sourcesFor(p) {
     if (!p || L.manual) return [];
+    if (p.mixed === false && !p.them) return ['me'];
     if (p.them) return p.me === null ? ['them'] : ['them', 'me'];
     return ['mixed'];
   }
@@ -2064,6 +2096,7 @@
             <video data-b="video" autoplay muted playsinline></video>
             <span class="stage-label">${icon('person')}Recruteur</span>
           </div>
+          ${lanesHTML(L.sim ? ['them', 'me'] : srcs)}
           <section class="live-answer">
             <article class="answer card" aria-live="polite" aria-atomic="false">
               <div class="answer-top">
@@ -2162,6 +2195,42 @@
     attachStage();
   }
 
+  /* ---------- Couloirs de parole : qui parle, et ce qui est en train d'être dit ---------- */
+  function lanesHTML(list) {
+    if (!list || !list.length) return '';
+    return `<div class="lanes lanes-${list.length}" data-b="lanes">${list.map((w) => {
+      const x = WHO[w] || WHO.them;
+      const name = w === 'me' ? 'Vous' : w === 'mixed' ? 'Voix (micro)' : 'Recruteur';
+      return `<div class="lane ${x.cls}" data-lane="${w}">
+        <span class="lane-av">${icon(x.icon)}</span>
+        <div class="lane-body"><div class="lane-top"><b>${name}</b><span class="lane-state" data-ls>${w === 'me' ? 'en attente de votre voix' : 'silencieux'}</span></div>
+        <div class="lane-text" data-lt></div></div>
+        <span class="lane-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  function laneSet(who, o) {
+    const el = L && L.root && $(`[data-lane="${who}"]`, L.root);
+    if (!el) return;
+    if ('active' in o) {
+      el.classList.toggle('active', !!o.active);
+      $('[data-ls]', el).textContent = o.active ? (who === 'me' ? 'on vous entend…' : 'parle…') : (who === 'me' ? 'à l’écoute' : 'silencieux');
+    }
+    if (o.text != null) {
+      const t = $('[data-lt]', el);
+      t.textContent = o.text;
+      t.classList.toggle('interim', !!o.interim);
+      t.scrollLeft = t.scrollWidth;
+    }
+  }
+  function lanePulse(who, ms) {
+    if (!L) return;
+    laneSet(who, { active: true });
+    L.laneT = L.laneT || {};
+    clearTimeout(L.laneT[who]);
+    L.laneT[who] = setTimeout(() => laneSet(who, { active: false }), ms || 700);
+  }
+
   /* ---------- Simulation : l'IA joue le recruteur, l'écran est celui du vrai entretien ---------- */
   function mountSim(root) {
     L.simAsked = L.simAsked || [];
@@ -2196,15 +2265,19 @@
       asked.push(q);
       const info = L.root && $('[data-s="info"]', L.root);
       if (info) info.textContent = `Question ${asked.length} · répondez à voix haute, puis « Question suivante » (N).`;
+      L.simLastQ = q;
+      laneSet('them', { text: q, interim: false });
       if (L.simVoice) {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(q);
+        u.onstart = () => laneSet('them', { active: true });
+        u.onend = u.onerror = () => { L.ttsEndAt = Date.now(); laneSet('them', { active: false }); };
         u.lang = 'fr-FR';
         const v = speechSynthesis.getVoices().find((x) => /^fr/i.test(x.lang));
         if (v) u.voice = v;
         u.rate = 1.02;
         speechSynthesis.speak(u);
-      }
+      } else lanePulse('them', 1500);
       addTranscript('them', q, { typed: true });
       answerQuestion(q, 'force');
     } catch (e) {
@@ -2375,6 +2448,8 @@
   function onInterim(ev) {
     if (!L || !L.running || !ev) return;
     const who = ev.who || 'them';
+    if (ev.text && simEcho(who, ev.text)) return;
+    if (ev.text && !/^[.…\s]*$/.test(ev.text)) { laneSet(who, { text: String(ev.text), interim: true }); lanePulse(who, 900); }
     if (!ev.text) delete L.interim[who];
     else L.interim[who] = String(ev.text);
     if (who !== 'me' && ev.text) { L.lastThemActivity = Date.now(); speculate(String(ev.text)); }
@@ -2387,7 +2462,9 @@
     const text = String(ev.text || '').trim();
     const who = ev.who || 'them';
     if (!text) { delete L.interim[who]; paintInterims(); return; }
+    if (simEcho(who, text)) { delete L.interim[who]; paintInterims(); return; }
     delete L.interim[who];
+    laneSet(who, { text, interim: false });
     addTranscript(who, text);
     // Fin d'entretien : on garde les derniers passages (transcription, récap) sans lancer de réponse.
     if (L.paused || L.draining) return;
@@ -2408,6 +2485,7 @@
     if (!L || !ev) return;
     const who = ev.who || 'them';
     liveDocs().forEach((dc) => $$(`[data-src="${who}"]`, dc).forEach((n) => n.classList.toggle('speaking', !!ev.active)));
+    laneSet(who, { active: !!ev.active });
     if (who === 'them') {
       L.themSpeaking = !!ev.active;
       L.lastThemActivity = Date.now();
@@ -2419,6 +2497,7 @@
   function onLevel(ev) {
     if (!L || !ev) return;
     L.levels[ev.who || 'me'] = Number(ev.rms) || 0;
+    if (L.levels[ev.who || 'me'] > 0.3) lanePulse(ev.who || 'me', 450);
     if (!L.levelRaf) L.levelRaf = requestAnimationFrame(paintLevels);
   }
   function paintLevels() {
@@ -2611,7 +2690,27 @@
     return sp.promise;
   }
 
-  async function answerQuestion(question, mode, base) {
+  // Dès qu'une réponse est prête, on prépare en coulisse ses variantes : le clic les affiche aussitôt.
+  const PRE_MODES = ['shorter', 'example', 'reformulate'];
+  function prefetchVariants(e) {
+    if (!L || !L.running || !hasKey() || !S.ai || settings().prefetch === false || e.pre || !e.question) return;
+    // Une seule réponse à la fois : on abandonne les variantes encore en cours des réponses précédentes.
+    L.entries.forEach((x) => { if (x !== e && x.pre) PRE_MODES.forEach((m) => { const pf = x.pre[m]; if (pf && !pf.done) { try { pf.ctrl.abort(); } catch (er) { /* rien */ } } }); });
+    e.pre = {};
+    const previous = L.entries.filter((x) => x.text && !x.info && !x.streaming).slice(-6).map((x) => ({ question: x.question, answer: x.text }));
+    PRE_MODES.forEach((mode) => {
+      const ctrl = new AbortController();
+      const pf = e.pre[mode] = { ctrl, text: '', listeners: [], at: Date.now(), q: e.question };
+      pf.promise = S.ai.answer({
+        dossier: L.d, transcript: L.session.transcript.map((x) => ({ who: x.who, text: x.text })),
+        question: e.question, previous, mode, signal: ctrl.signal, noRace: true,
+        onDelta: (full) => { pf.text = String(full || ''); pf.listeners.forEach((f) => f(pf.text)); }
+      });
+      pf.promise.then((r) => { pf.done = true; pf.res = r; }, () => { pf.failed = true; });
+    });
+  }
+
+  async function answerQuestion(question, mode, base, pre) {
     if (!L || !L.running) return;
     question = String(question || '').trim();
     mode = mode || 'force';
@@ -2685,7 +2784,7 @@
           if (!raf) raf = requestAnimationFrame(reveal);
         }
       };
-      const sp = (mode === 'auto' || mode === 'force') ? takeSpec(question) : null;
+      const sp = pre || ((mode === 'auto' || mode === 'force') ? takeSpec(question) : null);
       if (sp) entry.anticipated = true;
       const res = sp ? await adoptSpec(sp, req) : await S.ai.answer(req);
       if (ctrl.signal.aborted || !L) return;
@@ -2703,6 +2802,7 @@
       paintAnswers();
       recordAnswer(entry);
       setAI({ kind: 'ok', model: entry.model, ms: entry.firstTokenMs || entry.ms });
+      if (mode === 'auto' || mode === 'force') prefetchVariants(entry);
     } catch (e) {
       if (!L) return;
       entry.streaming = false;
@@ -2750,6 +2850,9 @@
     const e = L.entries[L.cur];
     if (!e || (!e.question && !e.text)) { toast('Aucune réponse à retravailler pour l’instant.', 'info'); return; }
     if (!hasKey()) { toast('Cette action nécessite une clé IA (Réglages).', 'warn'); return; }
+    // Variante déjà préparée en coulisse : affichage immédiat (ou reprise du flux en cours).
+    const pf = e.pre && e.pre[mode];
+    if (pf && !pf.failed && !pf.ctrl.signal.aborted) { e.pre[mode] = null; answerQuestion(e.question, mode, e, pf); return; }
     answerQuestion(e.question || firstLine(e.text), mode, e);
   }
 
@@ -2984,6 +3087,8 @@
     clearTimeout(L.autoTimer);
     clearTimeout(L.stageTimer);
     if (L.spec) { try { L.spec.ctrl.abort(); } catch (e) { /* rien */ } L.spec = null; }
+    (L.entries || []).forEach((x) => { if (x.pre) PRE_MODES.forEach((m) => { const pf = x.pre[m]; if (pf && !pf.done) { try { pf.ctrl.abort(); } catch (er) { /* rien */ } } }); });
+    Object.values(L.laneT || {}).forEach(clearTimeout);
     if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     clearTimeout(L.saveTimer); L.saveTimer = null;
     clearInterval(L.clock);

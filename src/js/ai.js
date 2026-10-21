@@ -1300,7 +1300,7 @@
   // seule clé, sans streaming, ou si la course est désactivée (settings.race === false).
   function raceGenerate(base, onDelta, signal) {
     const provs = PROVIDERS.filter(p => keyOf(p));
-    if (provs.length < 2 || !base.stream || settings().race === false) return generate(Object.assign({}, base, { onDelta, signal }));
+    if (provs.length < 2 || !base.stream || base.noRace || settings().race === false) return generate(Object.assign({}, base, { onDelta, signal }));
     if (signal && signal.aborted) return Promise.reject(abortError());
     return new Promise((resolve, reject) => {
       let winner = null, done = false, left = provs.length;
@@ -1362,7 +1362,7 @@
       purpose: 'answer', system, prompt, stream: o.stream !== false,
       maxTokens: mode === 'shorter' ? 400 : mode === 'example' || mode === 'pitch' ? 1100 : 900,
       temperature: mode === 'reformulate' ? 0.7 : 0.4,
-      timeoutMs: o.timeoutMs, budgetMs: o.budgetMs || 45000
+      timeoutMs: o.timeoutMs, budgetMs: o.budgetMs || 45000, noRace: !!o.noRace
     }, onDelta, o.signal);
     let text = String(r.text || '').trim();
     const skipped = mode === 'auto' && isSkip(text);
