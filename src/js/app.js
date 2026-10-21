@@ -2789,6 +2789,7 @@
       if (ctrl.signal.aborted || !L) return;
       entry.text = String((res && res.text) || entry.text || '');
       entry.streaming = false;
+      entry.truncated = !!(res && res.truncated);
       entry.model = res && res.model; entry.provider = res && res.provider; entry.ms = res && res.ms; entry.firstTokenMs = res && res.firstTokenMs;
       if (mode === 'auto' && isDash(entry.text)) {
         if (shown) removeEntry(entry);
@@ -2967,7 +2968,7 @@
     v.q.hidden = !e.question;
     v.q.innerHTML = e.question ? `<span class="q-label">${e.info ? icon('list') : icon('person2')}</span><span class="q-text">${esc(e.question)}</span>` : '';
     const ml = MODE_LABEL[e.mode];
-    if (v.meta) v.meta.innerHTML = answerBadge(e) + (ml ? `<span class="pill pill-xs">${esc(ml)}</span>` : '') + (e.interrupted ? '<span class="pill pill-xs pill-warn">interrompue</span>' : '');
+    if (v.meta) v.meta.innerHTML = answerBadge(e) + (ml ? `<span class="pill pill-xs">${esc(ml)}</span>` : '') + (e.interrupted ? '<span class="pill pill-xs pill-warn">interrompue</span>' : '') + (e.truncated ? '<span class="pill pill-xs pill-warn" title="Réponse coupée par la limite de longueur : cliquez Reformuler">incomplète</span>' : '');
     v.text.classList.toggle('streaming', !!e.streaming);
     v.text.setAttribute('aria-busy', e.streaming ? 'true' : 'false');
     v.text.innerHTML = e.text ? md(e.text) : '<p class="muted">…</p>';

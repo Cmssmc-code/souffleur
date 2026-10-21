@@ -1432,7 +1432,7 @@ body.is-paused .wave i { animation-play-state: paused; }
 .live-bar .ai-pill:not(.pill-err):not(.pill-warn) { display: none; }
 .live-bar .src:not([data-state="error"]):not([data-state="stopped"]) { display: none; }
 .actions-bar .kbd { display: none; }
-.answer-meta .pill { display: none; }
+.answer-meta .pill:not(.pill-warn) { display: none; }
 .answer-meta .src-badge { background: transparent; color: var(--text-3); padding: 0; font-weight: 500; }
 .live-chat { height: auto; min-height: 0; padding: 8px 12px; }
 .live-chat.collapsed .transcript, .live-chat.collapsed .jump { display: none; }

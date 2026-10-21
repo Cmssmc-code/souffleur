@@ -612,7 +612,8 @@
     const th = v.thinking ? thinkingFor(model) : null;
     if (th) {
       gc.thinkingConfig = th;
-      if (th.thinkingLevel) max += 1024; else if (th.thinkingBudget) max += th.thinkingBudget * 2;
+      // La réflexion consomme le même budget que la réponse : marge large (on ne paie que ce qui est utilisé).
+      if (th.thinkingLevel) max += 8192; else if (th.thinkingBudget) max += th.thinkingBudget * 2;
     }
     gc.maxOutputTokens = max;
     if (o.json) gc.responseMimeType = 'application/json';
@@ -864,12 +865,22 @@
   }
 
   // Une candidate, avec réessais « paramètres » sur 400 (thinkingConfig, temperature, max_tokens).
+  const TRUNCATED = /^(MAX_TOKENS|max_tokens|length)$/;
+
   async function tryCandidate(c, o) {
     const v = { thinking: c.provider === 'gemini' && !noThinking.has(c.model), noTemperature: false, maxTokens: 0 };
     for (let i = 0; i < 4; i++) {
       try {
         const r = await callOnce(c, o, v);
         if (c.provider === 'gemini' && !v.thinking && thinkingFor(c.model)) noThinking.add(c.model);
+        // Réponse coupée par la limite de longueur : on relance une fois avec un budget bien plus grand.
+        if (TRUNCATED.test(String(r.finish || '')) && !v.bigTokens) {
+          v.bigTokens = true;
+          v.maxTokens = Math.max(8192, (o.maxTokens || 1024) * 4);
+          emit('ai:status', { provider: c.provider, model: c.model, ok: false, purpose: o.purpose, error: 'réponse tronquée, relance', code: 'TRUNCATED' });
+          continue;
+        }
+        if (TRUNCATED.test(String(r.finish || ''))) r.truncated = true;
         return r;
       } catch (e) {
         if (!e || e.code !== 'BAD_REQUEST' || e.partialText) throw e;
@@ -943,7 +954,7 @@
         const out = {
           text: r.text, provider: c.provider, model: c.model, ms,
           firstTokenMs: Math.round((o.stream ? r.firstAt : now()) - run.start),
-          finish: r.finish || null
+          finish: r.finish || null, truncated: !!r.truncated
         };
         if (o.json) {
           const parsed = parseJsonLoose(r.text);

@@ -341,6 +341,31 @@ test('Groq : gros modèles seulement, flux SSE OpenAI, Whisper prioritaire pour 
   assert.equal(t.text, 'Pourquoi le Recho ?');
 });
 
+test('réponse tronquée (MAX_TOKENS) → relance avec un budget plus grand, texte complet', async () => {
+  const env = makeEnv({ geminiKey: 'g-key' });
+  let n = 0;
+  env.handler = () => {
+    n++;
+    if (n === 1) return bytesResponse(gEvent('**Je suis gestionnaire financier ') + gEvent('et ancien responsable : deux parcours qui', { finishReason: 'MAX_TOKENS' }));
+    return bytesResponse(gEvent('**Je suis gestionnaire financier et ancien responsable de restaurant.**\n') + gEvent('- **Budget** : révision annuelle.', { finishReason: 'STOP' }));
+  };
+  const deltas = [];
+  const r = await env.ai.generate({ prompt: 'Q', stream: true, maxTokens: 900, onDelta: t => deltas.push(t) });
+  assert.equal(r.text, '**Je suis gestionnaire financier et ancien responsable de restaurant.**\n- **Budget** : révision annuelle.');
+  assert.equal(r.truncated, false);
+  assert.equal(env.calls.length, 2, 'une relance');
+  const max1 = env.calls[0].body.generationConfig.maxOutputTokens, max2 = env.calls[1].body.generationConfig.maxOutputTokens;
+  assert.ok(max1 >= 900 + 8192, 'marge de réflexion large (' + max1 + ')');
+  assert.ok(max2 > max1, 'budget agrandi à la relance (' + max1 + ' → ' + max2 + ')');
+  assert.ok(env.events.some(e => e.type === 'ai:status' && e.code === 'TRUNCATED'));
+  // Toujours coupée après relance : on rend le texte en le marquant « tronqué ».
+  const env2 = makeEnv({ geminiKey: 'g-key' });
+  env2.handler = () => bytesResponse(gEvent('**Début coupé', { finishReason: 'MAX_TOKENS' }));
+  const r2 = await env2.ai.generate({ prompt: 'Q', stream: true });
+  assert.equal(r2.truncated, true);
+  assert.equal(env2.calls.length, 2);
+});
+
 test('400 API_KEY_INVALID (Gemini) traité comme une clé refusée', async () => {
   const env = makeEnv({ geminiKey: 'bad', claudeKey: 'c-key' });
   env.handler = (c) => isGemini(c)
@@ -552,7 +577,7 @@ test('answer : modes force / shorter / example / pitch / reformulate, voix mêl�
   let u = env.calls.at(-1).body.contents.at(-1).parts.at(-1).text;
   assert.match(u, /BEAUCOUP plus court/);
   assert.match(u, /Réponse actuelle :\n\*\*Rigueur et sens du service\.\*\*/);
-  assert.equal(env.calls.at(-1).body.generationConfig.maxOutputTokens, 400 + 1024);
+  assert.equal(env.calls.at(-1).body.generationConfig.maxOutputTokens, 400 + 8192);
   await env.ai.answer({ ...base, mode: 'example' });
   assert.match(env.calls.at(-1).body.contents.at(-1).parts.at(-1).text, /Développe cette réponse avec UN exemple concret/);
   await env.ai.answer({ ...base, mode: 'pitch' });
