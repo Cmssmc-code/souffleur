@@ -148,6 +148,8 @@ body {
 }
 img, svg { display: block; }
 button, input, textarea, select { font: inherit; color: inherit; }
+select option, select optgroup { background-color: var(--bg-elev); color: var(--text); }
+select { color-scheme: inherit; }
 a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 b, strong { font-weight: 600; }
