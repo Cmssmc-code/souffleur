@@ -1178,6 +1178,48 @@
   // « — » éventuellement suivi d'un court commentaire sans gras (« — (simple remarque) ») = pas une question.
   const isSkip = t => isDash(t) || (/^[—–-]/.test(t) && !/\*\*/.test(t) && t.length < 120);
 
+  // Course entre fournisseurs : la question part sur Gemini ET Claude en même temps ; le premier qui
+  // écrit un vrai début de réponse gagne et l'autre est annulé. Repli sur generate() classique avec une
+  // seule clé, sans streaming, ou si la course est désactivée (settings.race === false).
+  function raceGenerate(base, onDelta, signal) {
+    const provs = PROVIDERS.filter(p => keyOf(p));
+    if (provs.length < 2 || !base.stream || settings().race === false) return generate(Object.assign({}, base, { onDelta, signal }));
+    if (signal && signal.aborted) return Promise.reject(abortError());
+    return new Promise((resolve, reject) => {
+      let winner = null, done = false, left = provs.length;
+      const errs = [];
+      const ctrls = {};
+      const abortOthers = (p) => provs.forEach(x => { if (x !== p) ctrls[x].abort(); });
+      const finish = (fn, v) => { if (!done) { done = true; fn(v); } };
+      if (signal) signal.addEventListener('abort', () => { provs.forEach(x => ctrls[x] && ctrls[x].abort()); finish(reject, abortError()); }, { once: true });
+      provs.forEach(p => {
+        const c = ctrls[p] = new AbortController();
+        generate(Object.assign({}, base, {
+          providers: [p], signal: c.signal,
+          onDelta: (full) => {
+            if (winner && winner !== p) return;
+            if (!winner) {
+              const t = String(full || '').trim();
+              if (!t || isSkip(t)) return;
+              winner = p;
+              abortOthers(p);
+            }
+            if (onDelta) onDelta(full);
+          }
+        })).then((r) => {
+          left--;
+          if (!winner || winner === p) { winner = p; abortOthers(p); finish(resolve, Object.assign(r, { race: true })); }
+          else if (!left) finish(reject, errs[0] || abortError());
+        }, (e) => {
+          left--;
+          if (winner === p) { finish(reject, e); return; }
+          if (!e || e.name !== 'AbortError') errs.push(e);
+          if (!left) finish(reject, errs[0] || e || abortError());
+        });
+      });
+    });
+  }
+
   async function answer(opts) {
     const o = opts || {};
     const mode = ANSWER_MODES.indexOf(o.mode) >= 0 ? o.mode : 'auto';
@@ -1199,12 +1241,12 @@
       if (mode === 'auto' && isSkip(t)) return;
       o.onDelta(full.replace(/^\s*[—–]\s*/, ''));
     } : null;
-    const r = await generate({
-      purpose: 'answer', system, prompt, stream: o.stream !== false, onDelta, signal: o.signal,
+    const r = await raceGenerate({
+      purpose: 'answer', system, prompt, stream: o.stream !== false,
       maxTokens: mode === 'shorter' ? 400 : mode === 'example' || mode === 'pitch' ? 1100 : 900,
       temperature: mode === 'reformulate' ? 0.7 : 0.4,
       timeoutMs: o.timeoutMs, budgetMs: o.budgetMs || 45000
-    });
+    }, onDelta, o.signal);
     let text = String(r.text || '').trim();
     const skipped = mode === 'auto' && isSkip(text);
     if (skipped) text = '—';

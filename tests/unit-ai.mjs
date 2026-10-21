@@ -293,6 +293,30 @@ test('401 Gemini → fournisseur suivant (Claude, SSE) + événement ai:keyerror
   assert.ok(isClaude(env.calls[0]), 'la clé refusée passe après l\'autre fournisseur');
 });
 
+test('answer : course Gemini / Claude, le premier qui écrit gagne, l\'autre est ignoré', async () => {
+  const dossier = { name: 'Test', docs: [], prep: null };
+  const later = (ms, res) => new Promise(r => setTimeout(() => r(res), ms));
+  for (const [slow, fast] of [['gemini', 'claude'], ['claude', 'gemini']]) {
+    const env = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key' });
+    const sse = (p, txt) => p === 'gemini' ? geminiSSE(txt) : claudeSSE(txt);
+    env.handler = (c) => {
+      const p = isGemini(c) ? 'gemini' : 'claude';
+      return p === slow ? later(400, sse(p, ['**Lent ', p + '.**'])) : sse(p, ['**Rapide ', p + '.**']);
+    };
+    const deltas = [];
+    const r = await env.ai.answer({ dossier, question: 'Pourquoi ce poste ?', mode: 'force', onDelta: t => deltas.push(t) });
+    assert.equal(r.provider, fast, 'le plus rapide gagne (' + fast + ')');
+    assert.equal(r.text, '**Rapide ' + fast + '.**');
+    assert.ok(deltas.every(d => d.includes('Rapide')), 'aucun texte du perdant affiché');
+    assert.ok(env.calls.some(isGemini) && env.calls.some(isClaude), 'les deux fournisseurs sont interrogés');
+  }
+  const solo = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key', race: false });
+  solo.handler = (c) => isGemini(c) ? geminiSSE(['**Seul.**']) : claudeSSE(['**Non.**']);
+  const r2 = await solo.ai.answer({ dossier, question: 'Pourquoi ce poste ?', mode: 'force' });
+  assert.equal(r2.provider, 'gemini');
+  assert.ok(!solo.calls.some(isClaude), 'course désactivée : Claude non sollicité');
+});
+
 test('400 API_KEY_INVALID (Gemini) traité comme une clé refusée', async () => {
   const env = makeEnv({ geminiKey: 'bad', claudeKey: 'c-key' });
   env.handler = (c) => isGemini(c)

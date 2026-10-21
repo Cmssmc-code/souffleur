@@ -1252,6 +1252,8 @@
       ${section('Intelligence artificielle', `
         <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : Gemini d’abord, Claude en secours.')}
           ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['gemini', 'Gemini'], ['claude', 'Claude']])}</div>
+        <div class="list-row">${tile('bolt', 'blue')}${main('Course Gemini / Claude', 'Avec les deux clés : la question part sur les deux, la réponse la plus rapide s’affiche.')}
+          ${sw('race', s.race !== false, 'Course Gemini / Claude')}</div>
         ${PURPOSES.map(([p, label, sub]) => `<div class="list-row st-model st-wrap">${tile(p === 'answer' ? 'sparkles' : p === 'fast' ? 'waveform' : 'doc', p === 'answer' ? 'blue' : p === 'fast' ? 'teal' : 'green')}${main(label, sub, `data-auto="${p}"`)}
           <select data-model="${p}" aria-label="Modèle : ${esc(label)}"><option value="auto">Automatique</option>${models[p] && models[p] !== 'auto' ? `<option value="${esc(models[p])}" selected>${esc(models[p])}</option>` : ''}</select></div>`).join('')}
         <div class="list-row">${tile('refresh', 'gray')}<span class="list-main"><small data-models-status>Liste des modèles : automatique.</small></span>
