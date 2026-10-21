@@ -1234,6 +1234,7 @@
       '- Salaire : ne donne jamais de chiffre absent du contexte ; propose une formulation et une fourchette à compléter [XX k€].',
       '- Quand une réponse préparée ou la fiche de préparation correspond, appuie-toi dessus en l\'adaptant à la formulation exacte du recruteur.',
       '- Tu reçois TOUTE la conversation depuis le début et les réponses déjà suggérées : sers-t\'en. Si le recruteur relance ou fait référence à ce qui a été dit (« vous parliez de… », « pouvez-vous préciser ? », « et concrètement ? »), appuie-toi sur l\'échange précédent et complète sans te répéter. Reste cohérent avec ce que le candidat a déjà dit (chiffres, exemples).',
+      '- Mémoire de l\'entretien : quand plusieurs expériences du CV conviennent aussi bien, préfère un exemple pas encore utilisé dans cette conversation pour varier. Mais si un exemple déjà cité reste clairement le plus pertinent pour cette question, reprends-le sans hésiter (sous un autre angle) : ne force jamais un exemple moins adapté juste pour varier. Ne signale jamais ce choix.',
       mixed
         ? '- La transcription vient d\'un seul micro (« Voix » = recruteur et candidat mêlés, avec des erreurs de reconnaissance) : repère et traite la DERNIÈRE question posée par le recruteur.'
         : '- Transcription en deux voix : « Recruteur » = le recruteur, « Moi » = ce que le candidat a déjà dit. La reconnaissance vocale fait des erreurs : devine le sens.',

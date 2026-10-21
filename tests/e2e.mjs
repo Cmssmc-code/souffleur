@@ -281,7 +281,7 @@ await test('live « haut-parleur » : réponse préparée instantanée puis IA e
   await gotoApp(page, BASE, `#/live/${state.d1}`);
   await page.click('[data-preset="haut-parleur"]');
   await page.click('[data-act="start"]');
-  await page.waitForSelector('.live [data-src="mixed"][data-state="listening"]', { timeout: 8000 });
+  await page.waitForSelector('.live [data-src="mixed"][data-state="listening"]', { timeout: 8000, state: 'attached' });
   assert(await page.evaluate(() => window.__sr.active.size) >= 1, 'reconnaissance vocale démarrée');
   const t0 = Date.now();
   await page.evaluate((q) => window.__sr.say(q), QUESTION_FR);
@@ -369,9 +369,9 @@ await test('live {them:"mic", themEngine:"cloud"} : VAD + transcription mockée 
   await page.evaluate((id) => Souffleur.app.go('#/live/' + id), state.d1);
   await page.click('[data-preset="e2e-them-mic"]');
   await page.click('[data-act="start"]');
-  await page.waitForSelector('.live [data-src="them"]', { timeout: 8000 });
+  await page.waitForSelector('.live [data-src="them"]', { timeout: 8000, state: 'attached' });
   assert(await page.$('.live [data-src="me"]') === null, 'une seule source affichée quand seule la voix du recruteur est captée');
-  await page.waitForSelector('.transcript .tl-them:not(.tl-interim)', { timeout: 30000 });
+  await page.waitForSelector('.transcript .tl-them:not(.tl-interim)', { timeout: 30000, state: 'attached' });
   const tr = mock.log.filter((x) => x.kind === 'transcribe');
   if (!tr.length) console.log("      journal mock :", JSON.stringify(mock.log.map((x) => [x.provider, x.kind, x.model, x.status])));
   assert(tr.length >= 1 && tr[0].provider === 'gemini' && !tr[0].stream, `transcription Gemini (audio WAV inline) : ${JSON.stringify(tr[0])}`);
@@ -391,12 +391,12 @@ await test('live « visio-casque » : son de l’onglet (getDisplayMedia) + micr
   await gotoApp(page, BASE, `#/live/${state.d1}`);
   await page.click('[data-preset="visio-casque"]');
   await page.click('[data-act="start"]');
-  await page.waitForSelector('.live [data-src="them"]', { timeout: 8000 });
+  await page.waitForSelector('.live [data-src="them"]', { timeout: 8000, state: 'attached' });
   const disp = await page.evaluate(() => window.__display);
   assert(disp.calls === 1 && disp.last && disp.last.audio && disp.last.systemAudio === 'include', `getDisplayMedia appelé avec l’audio système : ${JSON.stringify(disp.last)}`);
-  await page.waitForSelector('.transcript .tl-them:not(.tl-interim)', { timeout: 30000 });
+  await page.waitForSelector('.transcript .tl-them:not(.tl-interim)', { timeout: 30000, state: 'attached' });
   await page.evaluate(() => window.__sr.say('Je suis contrôleur de gestion depuis huit ans dans l’industrie'));
-  await page.waitForSelector('.transcript .tl-me:not(.tl-interim)', { timeout: 8000 });
+  await page.waitForSelector('.transcript .tl-me:not(.tl-interim)', { timeout: 8000, state: 'attached' });
   await waitAnswer(page, (x) => x.source === 'ai' && x.text.includes(ANSWER_MARK), 'réponse IA en visio', 15000);
   await leaveLive(page);
 });
@@ -702,7 +702,7 @@ await test('fichier unique en file:// (dist/site/souffleur.html) : parcours comp
     await p3.evaluate((x) => Souffleur.app.go('#/live/' + x), id);
     await p3.click('[data-preset="haut-parleur"]');
     await p3.click('[data-act="start"]');
-    await p3.waitForSelector('.live [data-src="mixed"][data-state="listening"]', { timeout: 8000 });
+    await p3.waitForSelector('.live [data-src="mixed"][data-state="listening"]', { timeout: 8000, state: 'attached' });
     await p3.evaluate((q) => window.__sr.say(q), QUESTION_FR);
     await waitAnswer(p3, (a) => a.source === 'prep', 'réponse préparée (file://)', 5000);
     await waitAnswer(p3, (a) => a.source === 'ai' && a.text.includes(ANSWER_MARK) && !a.streaming, 'réponse IA (file://)', 15000);

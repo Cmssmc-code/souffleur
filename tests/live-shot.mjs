@@ -53,6 +53,6 @@ console.log(out);
 console.log(JSON.stringify(await page.evaluate(() => {
   const r = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return [sel, Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height), e.hidden ? 'hidden' : '']; };
   const v = document.querySelector('.stage video');
-  return { boxes: ['.live-bar', '.stage', '.answer', '.actions-bar', '.live-chat', '.live-faq', '.faq-list', '.live-faq .ask'].map(r), video: v && [v.videoWidth, v.videoHeight, v.readyState], faq: document.querySelectorAll('.faq-item').length, first: [...document.querySelectorAll('.faq-item')].slice(0, 5).map((x) => x.textContent), answer: (document.querySelector('.answer-text') || {}).textContent?.slice(0, 120), overflowY: document.documentElement.scrollHeight - innerHeight };
+  return { boxes: ['.live-bar', '.live-top', '.stage', '.lanes', '.answer', '.actions-bar', '.live-chat', '.live-faq', '.faq-list', '.live-faq .ask'].map(r), video: v && [v.videoWidth, v.videoHeight, v.readyState], faq: document.querySelectorAll('.faq-item').length, first: [...document.querySelectorAll('.faq-item')].slice(0, 5).map((x) => x.textContent), answer: (document.querySelector('.answer-text') || {}).textContent?.slice(0, 120), overflowY: document.documentElement.scrollHeight - innerHeight };
 })));
 await browser.close(); srv.server.close();

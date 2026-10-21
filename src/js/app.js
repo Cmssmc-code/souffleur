@@ -2092,11 +2092,12 @@
       <div class="live-banner" data-b="banner" hidden></div>
       <div class="live-grid live-stage-grid">
         <div class="live-center">
-          <div class="stage" data-b="stage" hidden title="Cliquer pour zoomer sur le visage">
-            <video data-b="video" autoplay muted playsinline></video>
-            <span class="stage-label">${icon('person')}Recruteur</span>
+          <div class="live-top">
+            <div class="stage" data-b="stage" hidden title="Cliquer pour zoomer sur le visage">
+              <video data-b="video" autoplay muted playsinline></video>
+            </div>
+            ${lanesHTML(L.sim ? ['them', 'me'] : srcs)}
           </div>
-          ${lanesHTML(L.sim ? ['them', 'me'] : srcs)}
           <section class="live-answer">
             <article class="answer card" aria-live="polite" aria-atomic="false">
               <div class="answer-top">
@@ -2124,9 +2125,9 @@
               </div>
             </div>
           </section>
-        <section class="live-side live-chat card">
+        <section class="live-side live-chat card collapsed" data-b="chat">
           <header class="side-head">
-            <h2 class="h3">Conversation</h2>
+            <button type="button" class="chat-toggle" data-act="chat" aria-expanded="false">${icon('chevron-down')}<span>Conversation</span></button>
             <span class="spacer"></span>
             <label class="mini-switch" title="Réponse automatique"><span>Auto</span><span class="switch switch-sm"><input type="checkbox" data-b="auto"${st.autoAnswer === false ? '' : ' checked'}><span></span></span></label>
           </header>
@@ -2135,16 +2136,9 @@
         </section>
         </div>
         <aside class="live-faq card">
-          <header class="side-head"><h2 class="h3">Questions fréquentes</h2><span class="spacer"></span><span class="badge" data-b="faqn"></span></header>
-          <label class="search"><span>${icon('search')}</span><input type="search" data-b="faqq" placeholder="Filtrer les questions…" aria-label="Filtrer les questions"></label>
+          <header class="side-head"><h2 class="h3">Questions fréquentes</h2></header>
           <div class="faq-list" data-b="faq" role="list"></div>
-          <div class="quick">
-            <button type="button" class="chip" data-quick="pitch">${icon('quote')}Pitch</button>
-            <button type="button" class="chip" data-quick="askThem">${icon('person2')}Questions à poser</button>
-            <button type="button" class="chip" data-quick="keyFacts">${icon('bolt')}Chiffres clés</button>
-            <button type="button" class="chip" data-quick="watchouts">${icon('warning')}Vigilance</button>
-            <button type="button" class="chip" data-quick="all">${icon('list')}Toutes les réponses</button>
-          </div>
+          <button type="button" class="faq-all" data-quick="all">Toutes les questions <span data-b="faqn"></span></button>
           <form class="ask" data-b="ask" autocomplete="off">
             <input type="text" data-b="askin" placeholder="Tapez une question…" aria-label="Tapez une question du recruteur" enterkeyhint="send">
             <button type="submit" class="icon-btn icon-btn-accent" aria-label="Obtenir une réponse">${icon('send')}</button>
@@ -2188,7 +2182,6 @@
     }, { passive: true });
     L.jumpEl.addEventListener('click', () => { L.followTranscript = true; scrollTranscript(true); L.jumpEl.hidden = true; });
     paintFaq();
-    $('[data-b="faqq"]', root).addEventListener('input', (e) => paintFaq(e.target.value));
     if (L.sim) mountSim(root);
     const stage = $('[data-b="stage"]', root);
     stage.addEventListener('click', () => stage.classList.toggle('zoom'));
@@ -2202,10 +2195,8 @@
       const x = WHO[w] || WHO.them;
       const name = w === 'me' ? 'Vous' : w === 'mixed' ? 'Voix (micro)' : 'Recruteur';
       return `<div class="lane ${x.cls}" data-lane="${w}">
-        <span class="lane-av">${icon(x.icon)}</span>
-        <div class="lane-body"><div class="lane-top"><b>${name}</b><span class="lane-state" data-ls>${w === 'me' ? 'en attente de votre voix' : 'silencieux'}</span></div>
-        <div class="lane-text" data-lt></div></div>
-        <span class="lane-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="lane-dot" aria-hidden="true"></span><b class="lane-name">${name}</b><span class="lane-state" data-ls hidden></span>
+        <span class="lane-text" data-lt></span>
       </div>`;
     }).join('')}</div>`;
   }
@@ -2299,9 +2290,10 @@
       const top = /presentez|parlez.moi de vous|votre parcours|pourquoi (ce poste|nous|le |la |l )|pourquoi (vous|avoir postule)/.test(S.util.norm(q.q));
       return { q, i, k: top ? -1 : k < 0 ? FAQ_ORDER.length : k };
     }).sort((a, b) => a.k - b.k || a.i - b.i).map((x) => x.q);
-    const f = S.util.norm(filter || '');
-    const list = f ? qs.filter((q) => S.util.norm([q.q].concat(q.variants || [], q.tags || []).join(' ')).includes(f)) : qs;
-    $('[data-b="faqn"]', L.root).textContent = qs.length ? String(qs.length) : '';
+    // Épuré : seulement les plus courantes ; le reste via « Toutes les questions ».
+    const list = qs.slice(0, 8);
+    $('[data-b="faqn"]', L.root).textContent = qs.length > 8 ? `(${qs.length})` : '';
+    $('.faq-all', L.root).hidden = qs.length <= 8;
     el.innerHTML = list.length ? list.map((q) => `<button type="button" class="faq-item" data-alt="${esc(q.id)}" role="listitem">${esc(q.q)}</button>`).join('')
       : `<div class="empty small muted">${qs.length ? 'Aucune question ne correspond.' : 'Pas encore de réponses préparées pour ce dossier.'}</div>`;
   }
@@ -2354,6 +2346,13 @@
       case 'help': shortcutsSheet(); break;
       case 'end': endLive(); break;
       case 'recapture': recapture(); break;
+      case 'chat': {
+        const c = $('[data-b="chat"]', L.root);
+        const open = c.classList.toggle('collapsed') === false;
+        $('[data-act="chat"]', c).setAttribute('aria-expanded', String(open));
+        if (open) scrollTranscript(true);
+        break;
+      }
       default: break;
     }
   }
