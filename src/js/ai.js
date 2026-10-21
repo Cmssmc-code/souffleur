@@ -1219,12 +1219,13 @@
   function prepPrompt(n, short) {
     return [
       'À partir des documents ci-dessus, prépare cet entretien. Réponds UNIQUEMENT par un objet JSON valide, sans texte autour, de la forme :',
-      '{"pitch": "…", "questions": [{"q": "…", "a": "…", "tags": ["…"]}], "askThem": ["…"], "keyFacts": ["…"], "watchouts": ["…"]}',
+      '{"pitch": "…", "questions": [{"q": "…", "variants": ["…"], "a": "…", "tags": ["…"]}], "askThem": ["…"], "keyFacts": ["…"], "watchouts": ["…"]}',
       '',
       'Consignes :',
       '- pitch : présentation orale de 60 secondes (130 à 160 mots), à la 1re personne, naturelle à dire : qui je suis → parcours clé avec 1 ou 2 réussites chiffrées → pourquoi ce poste et cette structure.',
       '- questions : exactement ' + n + ' questions probables, formulées comme le recruteur les poserait (vouvoiement), sans doublon, couvrant : classiques (présentation, parcours, motivations, pourquoi nous, qualités et défauts), missions précises de l\'offre, techniques métier, mises en situation, questions pièges (départs, périodes creuses, échecs, écarts entre le profil et l\'offre), comportementales, salaire et disponibilité, fin d\'entretien.',
       '- a : réponse prête au format souffleur. Ligne 1 = UNE phrase clé orale en **gras** (22 mots maximum, 1re personne). Puis ' + (short ? '2 à 3' : '3 à 4') + ' lignes commençant par « - » : « **2 à 4 mots clés** : fait concret tiré du CV » (16 mots maximum). Comportementale → puces **Situation :** / **Tâche :** / **Action :** / **Résultat :**. Si le CV ne couvre pas le sujet : réponse honnête (compétence transférable, envie d\'apprendre) puis une dernière ligne « ⚠️ pas dans ton CV ». Salaire : formulation + fourchette à compléter [XX k€] si aucun chiffre n\'est donné dans les notes. Sépare les lignes par \\n.',
+      '- variants : 3 à 5 autres façons, orales et variées, dont le recruteur pourrait poser la même question (sert à la reconnaître instantanément pendant l\'appel).',
       '- tags : d\'abord 1 catégorie parmi classique, poste, technique, situation, piège, comportementale, motivation, salaire, fin ; puis 2 à 4 mots ou expressions que le recruteur pourrait employer pour poser cette question.',
       '- askThem : 6 à 8 questions pertinentes à poser au recruteur, propres à ce poste et à cette structure.',
       '- keyFacts : 6 à 10 chiffres et faits clés à avoir en tête (résultats chiffrés du candidat ; données du poste et de la structure tirées de l\'offre), une ligne courte chacun.',
@@ -1278,7 +1279,8 @@
       let tags = it.tags;
       tags = Array.isArray(tags) ? tags.map(asText).filter(Boolean).slice(0, 6)
         : typeof tags === 'string' ? tags.split(/[,;]/).map(s => s.trim()).filter(Boolean).slice(0, 6) : [];
-      questions.push({ id: uid(), q, a, tags });
+      const variants = Array.isArray(it.variants) ? it.variants.map(asText).filter(Boolean).slice(0, 6) : [];
+      questions.push({ id: uid(), q, a, tags, variants });
     });
     return {
       pitch: asText(d.pitch),

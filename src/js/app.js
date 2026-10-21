@@ -2410,7 +2410,10 @@
   function bestMatches(question, n) {
     const qs = (L.d.prep && L.d.prep.questions) || [];
     if (!question || !qs.length) return [];
-    return qs.map((q) => ({ q, score: similarity(question, q.q || '') })).filter((x) => x.score > 0)
+    // Chaque question préparée peut porter des reformulations (q.variants) : on garde le meilleur score.
+    const score = (q) => [q.q || ''].concat(Array.isArray(q.variants) ? q.variants : [])
+      .reduce((m, t) => Math.max(m, similarity(question, t)), 0);
+    return qs.map((q) => ({ q, score: score(q) })).filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score).slice(0, n || 3);
   }
 

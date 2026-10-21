@@ -167,7 +167,7 @@
     const q = str(x.q != null ? x.q : x.question != null ? x.question : x.title).trim();
     const a = str(x.a != null ? x.a : x.answer != null ? x.answer : x.reponse != null ? x.reponse : x['réponse']);
     if (!q && !a.trim()) return null;
-    return { id: safeId(x.id), q, a, tags: strList(x.tags || x.k || x.keywords) };
+    return { id: safeId(x.id), q, a, tags: strList(x.tags || x.k || x.keywords), variants: strList(x.variants || x.v) };
   }
 
   function normPrep(p) {
