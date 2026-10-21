@@ -1764,6 +1764,7 @@
             <div class="small muted meet-hint">Puis « Démarrer l’écoute » et choisissez l’onglet de la visio, avec « Partager aussi l’audio de l’onglet ».</div>` : ''}
             <button type="button" class="btn btn-primary btn-xl start-btn" data-act="start">${icon('waveform')}<span>Démarrer l’écoute</span></button>
             <button type="button" class="btn btn-quiet" data-act="manual">${icon('keyboard')}<span>Continuer sans audio (saisie manuelle)</span></button>
+            <button type="button" class="btn btn-quiet" data-act="sim">${icon('graduation')}<span>Simulation : l’IA joue le recruteur</span></button>
             <div class="start-error" data-b="err" hidden></div>
           </div>
           <section class="card card-pad">
@@ -1795,6 +1796,7 @@
     bindSeg(root, '[data-b="delay"]', (v) => setSettings({ answerDelayMs: Number(v) }));
     $('[data-act="start"]', root).addEventListener('click', () => onStartClick(null));
     $('[data-act="manual"]', root).addEventListener('click', () => beginSession(null, { manual: true }));
+    $('[data-act="sim"]', root).addEventListener('click', () => beginSession(null, { manual: true, sim: true }));
     const rs = $('[data-act="resume"]', root);
     if (rs) rs.addEventListener('click', () => onStartClick(orphan));
     // Vumètre automatique si le micro est déjà autorisé (aucune invite).
@@ -1990,6 +1992,7 @@
     const d = L.d;
     L.preset = opts.preset || presetById(L.presetId);
     L.manual = !!opts.manual;
+    L.sim = !!opts.sim;
     if (resumeSession) {
       L.session = resumeSession;
       const last = (resumeSession.transcript || []).reduce((m, x) => Math.max(m, x.t || 0), 0);
@@ -2007,7 +2010,7 @@
           s.endedAt = st ? new Date(st.getTime() + lt + 1000).toISOString() : nowIso();
         }
       });
-      L.session = { id: uid(), kind: 'live', startedAt: nowIso(), endedAt: null, transcript: [], answers: [], scores: null, recap: null };
+      L.session = { id: uid(), kind: 'live', sim: L.sim, startedAt: nowIso(), endedAt: null, transcript: [], answers: [], scores: null, recap: null };
       d.sessions.push(L.session);
       L.startMs = Date.now();
     }
@@ -2153,9 +2156,63 @@
     L.jumpEl.addEventListener('click', () => { L.followTranscript = true; scrollTranscript(true); L.jumpEl.hidden = true; });
     paintFaq();
     $('[data-b="faqq"]', root).addEventListener('input', (e) => paintFaq(e.target.value));
+    if (L.sim) mountSim(root);
     const stage = $('[data-b="stage"]', root);
     stage.addEventListener('click', () => stage.classList.toggle('zoom'));
     attachStage();
+  }
+
+  /* ---------- Simulation : l'IA joue le recruteur, l'écran est celui du vrai entretien ---------- */
+  function mountSim(root) {
+    L.simAsked = L.simAsked || [];
+    L.simVoice = L.simVoice !== false && 'speechSynthesis' in window;
+    const bar = h(`<div class="sim-bar card">
+      <span class="tile tile-violet">${icon('graduation')}</span>
+      <div class="grow"><b>Simulation d’entretien</b><div class="small muted" data-s="info">L’IA joue le recruteur. Répondez à voix haute en lisant le souffleur, puis passez à la suite.</div></div>
+      <label class="mini-switch" title="Lire les questions à voix haute"><span>Voix</span><span class="switch switch-sm"><input type="checkbox" data-s="voice"${L.simVoice ? ' checked' : ''}><span></span></span></label>
+      <button type="button" class="btn btn-primary" data-s="next">${icon('play')}<span>Question suivante</span><span class="kbd">N</span></button>
+    </div>`);
+    const center = $('.live-center', root);
+    center.insertBefore(bar, center.firstChild);
+    $('[data-s="next"]', bar).addEventListener('click', simNext);
+    $('[data-s="voice"]', bar).addEventListener('change', (e) => { L.simVoice = e.target.checked; if (!L.simVoice) speechSynthesis.cancel(); });
+    if (!L.simAsked.length) setTimeout(simNext, 600);
+  }
+
+  // Incontournables d'abord, puis les autres questions préparées dans un ordre varié ; l'IA invente au-delà.
+  async function simNext() {
+    if (!L || !L.running || !L.sim || L.simBusy) return;
+    L.simBusy = true;
+    const btn = L.root && $('[data-s="next"]', L.root);
+    if (btn) btn.disabled = true;
+    try {
+      const asked = L.simAsked;
+      const qs = ((L.d.prep && L.d.prep.questions) || []).filter((q) => asked.indexOf(q.q) < 0);
+      const first = qs.find((q) => /presentez|parlez.moi de vous|votre parcours/.test(S.util.norm(q.q)));
+      let q = asked.length === 0 && first ? first.q : '';
+      if (!q && qs.length) q = qs[(asked.length * 7 + 3) % qs.length].q;
+      if (!q && S.ai && S.ai.hasKey()) { const r = await S.ai.trainingNext(L.d, asked); q = r && r.question; }
+      if (!q) { toast('Plus de questions : terminez la simulation pour voir le récap.', 'info'); return; }
+      asked.push(q);
+      const info = L.root && $('[data-s="info"]', L.root);
+      if (info) info.textContent = `Question ${asked.length} · répondez à voix haute, puis « Question suivante » (N).`;
+      if (L.simVoice) {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(q);
+        u.lang = 'fr-FR';
+        const v = speechSynthesis.getVoices().find((x) => /^fr/i.test(x.lang));
+        if (v) u.voice = v;
+        u.rate = 1.02;
+        speechSynthesis.speak(u);
+      }
+      addTranscript('them', q, { typed: true });
+      answerQuestion(q, 'force');
+    } catch (e) {
+      toast('Simulation : ' + errMsg(e), 'err');
+    } finally {
+      L.simBusy = false;
+      if (btn) btn.disabled = false;
+    }
   }
 
   // Questions préparées, les plus courantes d'abord (catégorie = 1er tag), filtrables.
@@ -2641,6 +2698,8 @@
       return;
     }
     clearTimeout(L.autoTimer);
+    clearTimeout(L.stageTimer);
+    if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     answerQuestion(q, 'force');
   }
 
@@ -2806,6 +2865,8 @@
     L.paused = !L.paused;
     try { if (L.paused) S.audio.pause(); else S.audio.resume(); } catch (e) { console.warn(e); }
     clearTimeout(L.autoTimer);
+    clearTimeout(L.stageTimer);
+    if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     L.pendingThem = []; L.firstPendingAt = 0;
     $$('[data-act="pause"]', L.root).concat(L.pip ? $$('[data-act="pause"]', L.pip.win.document) : []).forEach((b) => {
       b.innerHTML = icon(L.paused ? 'play' : 'pause');
@@ -2880,6 +2941,8 @@
     const wasRunning = L.running;
     L.running = false;
     clearTimeout(L.autoTimer);
+    clearTimeout(L.stageTimer);
+    if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     clearTimeout(L.saveTimer); L.saveTimer = null;
     clearInterval(L.clock);
     if (L.levelRaf) cancelAnimationFrame(L.levelRaf);
@@ -2940,6 +3003,7 @@
       p: 'pitch', P: 'pitch', ArrowLeft: 'prev', ArrowRight: 'next', '+': 'bigger', '=': 'bigger', '-': 'smaller', '_': 'smaller',
       f: 'pip', F: 'pip', m: 'pause', M: 'pause', '?': 'help'
     };
+    if (L.sim && (k === 'n' || k === 'N')) { e.preventDefault(); simNext(); return; }
     const act = map[k];
     if (!act) return;
     e.preventDefault();

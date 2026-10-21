@@ -1401,3 +1401,8 @@ body.is-paused .wave i { animation-play-state: paused; }
 .meet-btn { width: 100%; }
 .meet-hint { text-align: center; margin: -4px 0 4px; }
 .doc-pdf { flex: none; }
+
+/* Simulation d'entretien */
+.sim-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex: none; background: linear-gradient(135deg, color-mix(in srgb, var(--them) 14%, transparent), transparent 70%), var(--glass); }
+.sim-bar .grow { min-width: 0; }
+@media (max-width: 640px) { .sim-bar { flex-wrap: wrap; } .sim-bar .btn { width: 100%; } }
