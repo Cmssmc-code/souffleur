@@ -127,11 +127,21 @@
       <div class="row"><span class="tile tile-blue">${icon('calendar')}</span><div class="grow"><b>Prochains entretiens</b><div class="small muted">Préparés et mis à jour automatiquement.</div></div></div>
       <div class="row vault-form">
         <select class="input grow" aria-label="Choisir l’entretien">${list.map((d) => `<option value="${esc(d.id)}">${esc(label(d))}</option>`).join('')}</select>
+        <a class="btn" data-v="meet" target="_blank" rel="noopener noreferrer" hidden>${icon('video')}<span>Visio</span></a>
         <button type="button" class="btn" data-v="open">${icon('doc')}<span>Dossier</span></button>
         <button type="button" class="btn btn-primary" data-v="live">${icon('play')}<span>Lancer</span></button>
       </div>
     </section>`;
     const sel = el.querySelector('select');
+    const meet = el.querySelector('[data-v="meet"]');
+    const syncMeet = () => {
+      const d = list.find((x) => x.id === sel.value);
+      const url = d && /^https:\/\//.test(d.meetUrl || '') ? d.meetUrl : '';
+      meet.hidden = !url;
+      if (url) meet.href = url; else meet.removeAttribute('href');
+    };
+    sel.addEventListener('change', syncMeet);
+    syncMeet();
     el.querySelector('[data-v="open"]').addEventListener('click', () => S.app.go('#/dossier/' + sel.value));
     el.querySelector('[data-v="live"]').addEventListener('click', () => S.app.go('#/live/' + sel.value));
   }

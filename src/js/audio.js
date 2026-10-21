@@ -1841,6 +1841,15 @@ registerProcessor('souffleur-tap', SouffleurTap);
     unlock,
     setHint(h) { if (current) current.hint = String(h || ''); },
     status() { return current ? current.status() : { running: false, channels: [] }; },
+    // Vidéo du partage (onglet Meet, fenêtre ou écran Teams) pour afficher le recruteur dans l'app.
+    // La capture tourne à 1 i/s pour économiser ; on la remonte à `fps` quand elle est affichée.
+    videoStream(fps) {
+      const c = current && current.channel('them');
+      const vt = c && c.stream && c.stream.getVideoTracks()[0];
+      if (!vt || vt.readyState === 'ended') return null;
+      try { const p = vt.applyConstraints({ frameRate: { max: fps || 24 } }); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ }
+      return new MediaStream([vt]);
+    },
     message(code) { return MSG[code] || ''; },
     messages: MSG,
     _internals: {

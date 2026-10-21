@@ -1049,12 +1049,27 @@
       const live = `<button type="button" class="btn ${n ? 'btn-primary ' : ''}btn-lg" data-go="#/live/${esc(d.id)}">${icon('play')}<span>Lancer l’entretien</span></button>`;
       const train = `<button type="button" class="btn btn-lg" data-go="#/training/${esc(d.id)}">${icon('graduation')}<span>S’entraîner</span></button>`;
       const prep = `<button type="button" class="btn btn-primary btn-lg" data-cta="prep"${d.docs.length ? '' : ' disabled title="Ajoutez d’abord vos documents"'}>${icon('sparkles')}<span>Préparer avec l’IA</span></button>`;
-      cta.innerHTML = n ? live + train : (key ? prep : '') + live;
+      const meet = d.meetUrl ? `<a class="btn btn-lg" href="${esc(d.meetUrl)}" target="_blank" rel="noopener noreferrer">${icon('video')}<span>Visio</span></a>` : '';
+      cta.innerHTML = (n ? live + train : (key ? prep : '') + live) + meet;
       const pb = cta.querySelector('[data-cta="prep"]');
       if (pb) pb.addEventListener('click', () => { const g = ctx.B('prep') && ctx.B('prep').querySelector('[data-pact="gen"]'); if (g) { g.scrollIntoView({ behavior: 'smooth', block: 'center' }); g.click(); } });
     }
     B('doccount').textContent = d.docs.length ? String(d.docs.length) : '';
     B('doccount').hidden = !d.docs.length;
+  }
+
+  // Ouvre le fichier d'origine (PDF mis en forme) dans un nouvel onglet.
+  function openDocFile(doc) {
+    try {
+      const bin = atob(doc.file.data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: doc.file.mime || 'application/pdf' }));
+      const w = window.open(url, '_blank');
+      if (w) w.opener = null;
+      if (!w) S.util.download(new Blob([bytes], { type: doc.file.mime }), doc.file.name);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast('Impossible d’ouvrir ce fichier : ' + errMsg(e), 'err'); }
   }
 
   function paintDocs(ctx) {
@@ -1072,6 +1087,7 @@
         <label class="kind-select tone-${k.tone}" title="Type de document">
           <select data-doc-kind aria-label="Type de document">${KINDS.map((x) => `<option value="${x.id}"${x.id === k.id ? ' selected' : ''}>${esc(x.short)}</option>`).join('')}</select>${icon('chevron-down')}
         </label>
+        ${doc.file ? `<button type="button" class="btn btn-sm doc-pdf" data-doc="pdf" title="Ouvrir le document d’origine, mis en forme">${icon('doc')}<span>PDF</span></button>` : ''}
         <button type="button" class="icon-btn icon-btn-sm" data-doc="view" title="Aperçu et correction" aria-label="Aperçu">${icon('eye')}</button>
         <button type="button" class="icon-btn icon-btn-sm" data-doc="del" title="Retirer" aria-label="Retirer le document">${icon('trash')}</button>
       </div>`;
@@ -1093,7 +1109,8 @@
         if (!(await confirmSheet({ title: 'Retirer ce document ?', text: `« ${doc.name} » sera retiré du dossier.`, okLabel: 'Retirer', danger: true }))) return;
         d.docs = d.docs.filter((x) => x !== doc);
         ctx.save(); paintDocs(ctx); paintReadiness(ctx); refreshPrepState(ctx);
-      } else docSheet(ctx, doc);
+      } else if (b.dataset.doc === 'pdf') openDocFile(doc);
+      else docSheet(ctx, doc);
     }));
     paintReadiness(ctx);
   }
@@ -1133,7 +1150,17 @@
         const text = (r && r.text) || '';
         if (!text.trim()) throw new Error('aucun texte trouvé dans ce fichier.');
         const kind = S.docs.guessKind ? S.docs.guessKind(f.name || '', text) : 'autre';
-        ctx.d.docs.push({ id: uid(), kind, name: f.name || 'Document', text, method: r.method, addedAt: nowIso() });
+        const doc = { id: uid(), kind, name: f.name || 'Document', text, method: r.method, addedAt: nowIso() };
+        // PDF : on garde aussi l'original mis en forme pour le consulter tel quel.
+        if (/pdf$/i.test(f.type || '') || /\.pdf$/i.test(f.name || '')) {
+          if (f.size <= 8 * 1024 * 1024) {
+            const buf = new Uint8Array(await f.arrayBuffer());
+            let bin = '';
+            for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+            doc.file = { name: f.name, mime: 'application/pdf', data: btoa(bin) };
+          }
+        }
+        ctx.d.docs.push(doc);
         if (r.warning) toast(`${f.name}${NB}: ${r.warning}`, 'warn');
         else toast(`« ${f.name} » ajouté · ${kindOf(kind).label}`, 'ok');
       } catch (e) {
@@ -1733,6 +1760,8 @@
             <div class="row"><button type="button" class="btn btn-sm btn-primary" data-act="resume">${icon('play')}<span>Reprendre</span></button><button type="button" class="btn btn-sm" data-go="#/recap/${esc(d.id)}/${esc(orphan.id)}">Voir le récap</button></div>
           </section>` : ''}
           <div class="start-zone">
+            ${d.meetUrl ? `<a class="btn btn-lg btn-glass meet-btn" href="${esc(d.meetUrl)}" target="_blank" rel="noopener noreferrer">${icon('video')}<span>1. Rejoindre la visio</span></a>
+            <div class="small muted meet-hint">Puis « Démarrer l’écoute » et choisissez l’onglet de la visio, avec « Partager aussi l’audio de l’onglet ».</div>` : ''}
             <button type="button" class="btn btn-primary btn-xl start-btn" data-act="start">${icon('waveform')}<span>Démarrer l’écoute</span></button>
             <button type="button" class="btn btn-quiet" data-act="manual">${icon('keyboard')}<span>Continuer sans audio (saisie manuelle)</span></button>
             <div class="start-error" data-b="err" hidden></div>
@@ -2026,42 +2055,53 @@
         </div>
       </header>
       <div class="live-banner" data-b="banner" hidden></div>
-      <div class="live-grid">
-        <section class="live-answer">
-          <article class="answer card" aria-live="polite" aria-atomic="false">
-            <div class="answer-top">
-              <div class="answer-q" data-v="q"></div>
-              <div class="answer-nav">
-                <button type="button" class="icon-btn icon-btn-sm" data-act="prev" title="Réponse précédente (←)" aria-label="Réponse précédente">${icon('chevron-left')}</button>
-                <span class="answer-count" data-v="count"></span>
-                <button type="button" class="icon-btn icon-btn-sm" data-act="next" title="Réponse suivante (→)" aria-label="Réponse suivante">${icon('chevron-right')}</button>
+      <div class="live-grid live-stage-grid">
+        <div class="live-center">
+          <div class="stage" data-b="stage" hidden title="Cliquer pour zoomer sur le visage">
+            <video data-b="video" autoplay muted playsinline></video>
+            <span class="stage-label">${icon('person')}Recruteur</span>
+          </div>
+          <section class="live-answer">
+            <article class="answer card" aria-live="polite" aria-atomic="false">
+              <div class="answer-top">
+                <div class="answer-q" data-v="q"></div>
+                <div class="answer-nav">
+                  <button type="button" class="icon-btn icon-btn-sm" data-act="prev" title="Réponse précédente (←)" aria-label="Réponse précédente">${icon('chevron-left')}</button>
+                  <span class="answer-count" data-v="count"></span>
+                  <button type="button" class="icon-btn icon-btn-sm" data-act="next" title="Réponse suivante (→)" aria-label="Réponse suivante">${icon('chevron-right')}</button>
+                </div>
+              </div>
+              <div class="answer-meta" data-v="meta"></div>
+              <div class="answer-text md sf" data-v="text"></div>
+              <div class="answer-extra" data-v="extra"></div>
+            </article>
+            <div class="actions-bar" role="toolbar" aria-label="Actions sur la réponse">
+              <button type="button" class="btn btn-primary" data-act="now">${icon('bolt')}<span>Répondre maintenant</span><span class="kbd">Espace</span></button>
+              <button type="button" class="btn" data-act="shorter">${icon('text-size')}<span>Plus court</span><span class="kbd">C</span></button>
+              <button type="button" class="btn" data-act="example">${icon('lightbulb')}<span>Exemple concret</span><span class="kbd">E</span></button>
+              <button type="button" class="btn" data-act="reformulate">${icon('refresh')}<span>Reformuler</span><span class="kbd">R</span></button>
+              <button type="button" class="btn" data-act="pitch">${icon('quote')}<span>Pitch</span><span class="kbd">P</span></button>
+              <span class="spacer"></span>
+              <div class="font-ctl" role="group" aria-label="Taille du texte">
+                <button type="button" class="icon-btn icon-btn-sm" data-act="smaller" title="Texte plus petit (−)" aria-label="Texte plus petit"><span class="aa-sm">A</span></button>
+                <button type="button" class="icon-btn icon-btn-sm" data-act="bigger" title="Texte plus grand (+)" aria-label="Texte plus grand"><span class="aa-lg">A</span></button>
               </div>
             </div>
-            <div class="answer-meta" data-v="meta"></div>
-            <div class="answer-text md sf" data-v="text"></div>
-            <div class="answer-extra" data-v="extra"></div>
-          </article>
-          <div class="actions-bar" role="toolbar" aria-label="Actions sur la réponse">
-            <button type="button" class="btn btn-primary" data-act="now">${icon('bolt')}<span>Répondre maintenant</span><span class="kbd">Espace</span></button>
-            <button type="button" class="btn" data-act="shorter">${icon('text-size')}<span>Plus court</span><span class="kbd">C</span></button>
-            <button type="button" class="btn" data-act="example">${icon('lightbulb')}<span>Exemple concret</span><span class="kbd">E</span></button>
-            <button type="button" class="btn" data-act="reformulate">${icon('refresh')}<span>Reformuler</span><span class="kbd">R</span></button>
-            <button type="button" class="btn" data-act="pitch">${icon('quote')}<span>Pitch</span><span class="kbd">P</span></button>
-            <span class="spacer"></span>
-            <div class="font-ctl" role="group" aria-label="Taille du texte">
-              <button type="button" class="icon-btn icon-btn-sm" data-act="smaller" title="Texte plus petit (−)" aria-label="Texte plus petit"><span class="aa-sm">A</span></button>
-              <button type="button" class="icon-btn icon-btn-sm" data-act="bigger" title="Texte plus grand (+)" aria-label="Texte plus grand"><span class="aa-lg">A</span></button>
-            </div>
-          </div>
-        </section>
-        <section class="live-side card">
+          </section>
+        <section class="live-side live-chat card">
           <header class="side-head">
-            <h2 class="h3">Transcription</h2>
+            <h2 class="h3">Conversation</h2>
             <span class="spacer"></span>
             <label class="mini-switch" title="Réponse automatique"><span>Auto</span><span class="switch switch-sm"><input type="checkbox" data-b="auto"${st.autoAnswer === false ? '' : ' checked'}><span></span></span></label>
           </header>
           <div class="transcript" data-b="transcript" role="log" aria-label="Transcription de l’appel"></div>
           <button type="button" class="jump" data-b="jump" hidden>${icon('arrow-down')}<span>Dernières répliques</span></button>
+        </section>
+        </div>
+        <aside class="live-faq card">
+          <header class="side-head"><h2 class="h3">Questions fréquentes</h2><span class="spacer"></span><span class="badge" data-b="faqn"></span></header>
+          <label class="search"><span>${icon('search')}</span><input type="search" data-b="faqq" placeholder="Filtrer les questions…" aria-label="Filtrer les questions"></label>
+          <div class="faq-list" data-b="faq" role="list"></div>
           <div class="quick">
             <button type="button" class="chip" data-quick="pitch">${icon('quote')}Pitch</button>
             <button type="button" class="chip" data-quick="askThem">${icon('person2')}Questions à poser</button>
@@ -2073,7 +2113,7 @@
             <input type="text" data-b="askin" placeholder="Tapez une question…" aria-label="Tapez une question du recruteur" enterkeyhint="send">
             <button type="submit" class="icon-btn icon-btn-accent" aria-label="Obtenir une réponse">${icon('send')}</button>
           </form>
-        </section>
+        </aside>
       </div>
     </div>`;
     const v = {
@@ -2111,6 +2151,46 @@
       if (L.followTranscript) L.jumpEl.hidden = true;
     }, { passive: true });
     L.jumpEl.addEventListener('click', () => { L.followTranscript = true; scrollTranscript(true); L.jumpEl.hidden = true; });
+    paintFaq();
+    $('[data-b="faqq"]', root).addEventListener('input', (e) => paintFaq(e.target.value));
+    const stage = $('[data-b="stage"]', root);
+    stage.addEventListener('click', () => stage.classList.toggle('zoom'));
+    attachStage();
+  }
+
+  // Questions préparées, les plus courantes d'abord (catégorie = 1er tag), filtrables.
+  const FAQ_ORDER = ['classique', 'motivation', 'poste', 'comportementale', 'technique', 'situation', 'piege', 'salaire', 'fin'];
+  function paintFaq(filter) {
+    const el = L && L.root && $('[data-b="faq"]', L.root);
+    if (!el) return;
+    const qs = ((L.d.prep && L.d.prep.questions) || []).map((q, i) => {
+      const k = FAQ_ORDER.indexOf(S.util.norm((q.tags || [])[0] || ''));
+      // Les incontournables en tête, quelle que soit leur catégorie.
+      const top = /presentez|parlez.moi de vous|votre parcours|pourquoi (ce poste|nous|le |la |l )|pourquoi (vous|avoir postule)/.test(S.util.norm(q.q));
+      return { q, i, k: top ? -1 : k < 0 ? FAQ_ORDER.length : k };
+    }).sort((a, b) => a.k - b.k || a.i - b.i).map((x) => x.q);
+    const f = S.util.norm(filter || '');
+    const list = f ? qs.filter((q) => S.util.norm([q.q].concat(q.variants || [], q.tags || []).join(' ')).includes(f)) : qs;
+    $('[data-b="faqn"]', L.root).textContent = qs.length ? String(qs.length) : '';
+    el.innerHTML = list.length ? list.map((q) => `<button type="button" class="faq-item" data-alt="${esc(q.id)}" role="listitem">${esc(q.q)}</button>`).join('')
+      : `<div class="empty small muted">${qs.length ? 'Aucune question ne correspond.' : 'Pas encore de réponses préparées pour ce dossier.'}</div>`;
+  }
+
+  // Vidéo du recruteur (partage Meet / Teams) au-dessus de la réponse ; se rebranche après une relance de capture.
+  function attachStage() {
+    if (!L || !L.running || !L.root) return;
+    const stage = $('[data-b="stage"]', L.root);
+    const video = stage && $('video', stage);
+    if (!video) return;
+    const cur = video.srcObject && video.srcObject.getVideoTracks()[0];
+    if (!cur || cur.readyState === 'ended') {
+      const ms = S.audio && S.audio.videoStream ? S.audio.videoStream(24) : null;
+      video.srcObject = ms;
+      stage.hidden = !ms;
+      if (ms) { const p = video.play(); if (p && p.catch) p.catch(() => {}); }
+    }
+    clearTimeout(L.stageTimer);
+    L.stageTimer = setTimeout(attachStage, 2000);
   }
 
   function onLiveClick(e) {

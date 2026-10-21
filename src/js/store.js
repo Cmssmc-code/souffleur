@@ -189,7 +189,10 @@
       kind: KINDS.includes(x.kind) ? x.kind : 'autre',
       name: str(x.name).trim() || 'Document',
       text: capText(str(x.text)),
-      addedAt: toIso(x.addedAt)
+      addedAt: toIso(x.addedAt),
+      // Fichier d'origine (PDF mis en forme) à consulter tel quel : {name, mime, data base64}.
+      file: isObj(x.file) && typeof x.file.data === 'string' && x.file.data
+        ? { name: str(x.file.name) || 'document.pdf', mime: str(x.file.mime) || 'application/pdf', data: x.file.data } : null
     });
   }
 
@@ -224,6 +227,8 @@
     out.mode = MODES.includes(d.mode) ? d.mode : 'visio';
     out.interviewer = str(d.interviewer);
     out.notes = str(d.notes);
+    // Lien de visio (Meet, Teams, Zoom…) : https uniquement.
+    out.meetUrl = /^https:\/\/[^\s"'<>]+$/.test(str(d.meetUrl).trim()) ? str(d.meetUrl).trim() : '';
     out.docs = uniqIds(arr(d.docs).filter(isObj).map(normDoc));
     out.prep = normPrep(d.prep);
     out.sessions = uniqIds(arr(d.sessions).filter(isObj).map(normSession));

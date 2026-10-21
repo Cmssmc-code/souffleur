@@ -1367,3 +1367,37 @@ body.is-paused .wave i { animation-play-state: paused; }
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
   .aurora i { animation: none !important; }
 }
+
+/* ======================================================================= */
+/* Live « scène » : recruteur en haut au centre, réponse dessous, FAQ à droite */
+/* ======================================================================= */
+.live-center { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+.stage { position: relative; flex: none; align-self: center; width: min(100%, 560px, calc(30vh * 16 / 9)); aspect-ratio: 16 / 9; border-radius: 22px; overflow: hidden; background: #000; box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .08); cursor: zoom-in; }
+.stage[hidden] { display: none; }
+.stage video { width: 100%; height: 100%; object-fit: contain; display: block; transition: transform .32s cubic-bezier(.2, .8, .2, 1); }
+.stage.zoom { cursor: zoom-out; }
+.stage.zoom video { object-fit: cover; transform: scale(1.6); }
+.stage-label { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(0, 0, 0, .45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: #fff; font: 600 12px/1 var(--font); }
+.stage-label svg.ico { width: 14px; height: 14px; }
+.live-center .live-answer { flex: 1 1 0; min-height: 230px; }
+.live-center .answer { min-height: 150px; }
+.live-chat { flex: none; display: flex; flex-direction: column; padding: 12px 14px; height: 20vh; min-height: 120px; }
+.live-chat .transcript { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.live-faq { display: flex; flex-direction: column; gap: 10px; padding: 14px; min-height: 0; overflow: hidden; }
+.live-faq .search { width: 100%; flex: none; }
+.faq-list { flex: 1 1 auto; min-height: 120px; overflow: auto; display: flex; flex-direction: column; gap: 4px; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.faq-item { text-align: left; padding: 9px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--text); font: 500 14px/1.35 var(--font); cursor: pointer; transition: background-color .18s; }
+.faq-item:hover, .faq-item:focus-visible { background: var(--fill); outline: none; }
+.faq-item:active { background: var(--accent-soft); }
+.live-faq .quick { flex: none; flex-wrap: wrap; }
+@media (min-width: 1000px) {
+  .live-stage-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+}
+@media (max-width: 999px) {
+  .live-faq { max-height: 70vh; }
+  .live-chat { max-height: 40vh; }
+}
+
+.meet-btn { width: 100%; }
+.meet-hint { text-align: center; margin: -4px 0 4px; }
+.doc-pdf { flex: none; }
