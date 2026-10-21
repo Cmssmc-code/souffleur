@@ -1436,3 +1436,10 @@ body.is-paused .wave i { animation-play-state: paused; }
 @keyframes laneBar { 0%, 100% { height: 5px; } 50% { height: 20px; } }
 @keyframes lanePulse { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
 @media (max-width: 640px) { .lanes { grid-template-columns: minmax(0, 1fr); } }
+
+/* Repères de lecture rapide */
+.actions-bar .btn.ready { position: relative; }
+.actions-bar .btn.ready::after { content: ""; position: absolute; top: 7px; right: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--me); box-shadow: 0 0 0 2px var(--bg-elev); }
+.faq-item.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 650; }
+.answer-text > p:first-child::before { content: "À dire"; display: block; width: max-content; margin-bottom: .35em; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font: 700 11px/1.5 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.answer-text li strong:first-child { background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 0 .25em; border-radius: 5px; }

@@ -2706,7 +2706,7 @@
         question: e.question, previous, mode, signal: ctrl.signal, noRace: true,
         onDelta: (full) => { pf.text = String(full || ''); pf.listeners.forEach((f) => f(pf.text)); }
       });
-      pf.promise.then((r) => { pf.done = true; pf.res = r; }, () => { pf.failed = true; });
+      pf.promise.then((r) => { pf.done = true; pf.res = r; if (L && L.entries[L.cur] === e) paintNav(); }, () => { pf.failed = true; });
     });
   }
 
@@ -2939,7 +2939,15 @@
       if (v.next) v.next.disabled = L.cur >= n - 1;
       const nav = v.prev && v.prev.parentElement;
       if (nav) nav.style.visibility = n ? '' : 'hidden';
-      $$('[data-act="shorter"],[data-act="example"],[data-act="reformulate"]', v.main ? L.root : v.doc).forEach((b) => { b.disabled = !n; });
+      const e = L.entries[L.cur];
+      $$('[data-act="shorter"],[data-act="example"],[data-act="reformulate"]', v.main ? L.root : v.doc).forEach((b) => {
+        b.disabled = !n;
+        // Pastille « prête » : la variante est déjà chargée, le clic l'affiche instantanément.
+        const pf = e && e.pre && e.pre[b.dataset.act];
+        b.classList.toggle('ready', !!(pf && pf.done));
+      });
+      // Question préparée correspondante surlignée dans la liste de droite.
+      if (v.main) $$('.faq-item', L.root).forEach((b) => b.classList.toggle('on', !!(e && (b.dataset.alt === e.qid || (e.prepQ && b.textContent === e.prepQ)))));
     });
   }
   function paintAnswerView(v) {
