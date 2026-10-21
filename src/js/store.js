@@ -22,7 +22,7 @@
   const WHO = ['them', 'me', 'mixed'];
 
   const DEFAULT_SETTINGS = {
-    geminiKey: '', claudeKey: '', rememberKeys: true, provider: 'auto',
+    geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto',
     models: { answer: 'auto', fast: 'auto', prep: 'auto' },
     theme: 'auto', fontScale: 1, lang: 'fr-FR', autoAnswer: true, answerDelayMs: 900, onboarded: false
   };
@@ -575,17 +575,19 @@
    * ------------------------------------------------------------------ */
   let settingsCache = null;
 
+  const KEY_NAMES = ['geminiKey', 'claudeKey', 'groqKey'];
   function readKeys(remember) {
     const sess = readJSON(SS, KEYS_KEY) || {};
     const loc = remember ? readJSON(LS, KEYS_KEY) || {} : {};
-    return {
-      geminiKey: str(loc.geminiKey || sess.geminiKey).trim(),
-      claudeKey: str(loc.claudeKey || sess.claudeKey).trim()
-    };
+    const out = {};
+    KEY_NAMES.forEach((k) => { out[k] = str(loc[k] || sess[k]).trim(); });
+    return out;
   }
   function writeKeys(keys, remember) {
-    const empty = !keys.geminiKey && !keys.claudeKey;
-    const json = JSON.stringify({ geminiKey: keys.geminiKey || '', claudeKey: keys.claudeKey || '' });
+    const empty = KEY_NAMES.every((k) => !keys[k]);
+    const obj = {};
+    KEY_NAMES.forEach((k) => { obj[k] = keys[k] || ''; });
+    const json = JSON.stringify(obj);
     const [keep, drop] = remember ? [LS, SS] : [SS, LS];
     if (empty) keep.remove(KEYS_KEY); else keep.set(KEYS_KEY, json);
     drop.remove(KEYS_KEY);
@@ -599,14 +601,16 @@
     // ancienne version : clés éventuellement stockées dans les réglages
     s.geminiKey = keys.geminiKey || str(isObj(stored) && s.rememberKeys ? stored.geminiKey : '').trim();
     s.claudeKey = keys.claudeKey || str(isObj(stored) && s.rememberKeys ? stored.claudeKey : '').trim();
+    s.groqKey = keys.groqKey || '';
     return s;
   }
 
   function sanitizeSettings(s) {
     s.geminiKey = str(s.geminiKey).trim();
     s.claudeKey = str(s.claudeKey).trim();
+    s.groqKey = str(s.groqKey).trim();
     s.rememberKeys = s.rememberKeys !== false;
-    if (!['auto', 'gemini', 'claude'].includes(s.provider)) s.provider = 'auto';
+    if (!['auto', 'gemini', 'claude', 'groq'].includes(s.provider)) s.provider = 'auto';
     if (!['auto', 'light', 'dark'].includes(s.theme)) s.theme = 'auto';
     if (!isObj(s.models)) s.models = clone(DEFAULT_SETTINGS.models);
     for (const k of ['answer', 'fast', 'prep']) if (!s.models[k]) s.models[k] = 'auto';
@@ -639,6 +643,7 @@
     const persisted = clone(next);
     delete persisted.geminiKey;
     delete persisted.claudeKey;
+    delete persisted.groqKey;
     if (!LS.set(LS_SETTINGS, JSON.stringify(persisted))) U.toast('Réglages non enregistrés durablement (stockage plein ou bloqué).', 'warn');
     writeKeys(next, next.rememberKeys);
     settingsCache = next;
@@ -653,6 +658,7 @@
     const patch = {};
     if ('geminiKey' in k) patch.geminiKey = k.geminiKey;
     if ('claudeKey' in k) patch.claudeKey = k.claudeKey;
+    if ('groqKey' in k) patch.groqKey = k.groqKey;
     return store.setSettings(patch);
   };
 
@@ -663,6 +669,8 @@
     const c = k.claudeKey != null ? k.claudeKey : k.claude != null ? k.claude : k.anthropicKey;
     if (typeof g === 'string' && (allowEmpty || g.trim())) out.geminiKey = g.trim();
     if (typeof c === 'string' && (allowEmpty || c.trim())) out.claudeKey = c.trim();
+    const q = k.groqKey != null ? k.groqKey : k.groq;
+    if (typeof q === 'string' && (allowEmpty || q.trim())) out.groqKey = q.trim();
     return Object.keys(out).length ? out : null;
   }
 
@@ -690,6 +698,7 @@
     const keys = {};
     if (s.geminiKey) keys.geminiKey = s.geminiKey;
     if (s.claudeKey) keys.claudeKey = s.claudeKey;
+    if (s.groqKey) keys.groqKey = s.groqKey;
     return Object.keys(keys).length ? keys : null;
   }
 
@@ -773,13 +782,13 @@
   function offerKeys(keys) {
     const cur = store.settings();
     const apply = {}, pending = {};
-    for (const k of ['geminiKey', 'claudeKey']) {
+    for (const k of KEY_NAMES) {
       if (!keys[k] || keys[k] === cur[k]) continue;
       if (!cur[k]) apply[k] = keys[k]; else pending[k] = keys[k];
     }
     // Appareil sans aucune clé (PC emprunté, export ouvert ailleurs) : clés gardées pour cette session
     // seulement (sessionStorage). L'utilisateur peut ensuite choisir de s'en souvenir.
-    const sessionOnly = !cur.geminiKey && !cur.claudeKey && Object.keys(apply).length > 0;
+    const sessionOnly = KEY_NAMES.every((k) => !cur[k]) && Object.keys(apply).length > 0;
     if (Object.keys(apply).length) {
       if (sessionOnly) store.setSettings(Object.assign({ rememberKeys: false }, apply));
       else store.setKeys(apply);

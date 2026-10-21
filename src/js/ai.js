@@ -5,16 +5,20 @@
 
   const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
   const CLAUDE_API = 'https://api.anthropic.com/v1';
+  const GROQ_API = 'https://api.groq.com/openai/v1';
   const CLAUDE_VERSION = '2023-06-01';
   const CACHE_KEY = 'souffleur.models';
-  const PROVIDERS = ['gemini', 'claude'];
-  const LABEL = { gemini: 'Gemini', claude: 'Claude' };
+  const PROVIDERS = ['gemini', 'claude', 'groq'];
+  const LABEL = { gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
   const FALLBACK = {
     gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash-preview', 'gemini-flash-latest',
       'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
-    claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5']
+    claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
+    // Groq : uniquement de gros modèles (assez intelligents pour un entretien), jamais les « instant » / 8B.
+    groq: ['moonshotai/kimi-k2-instruct-0905', 'moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
   };
+  const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3'];
 
   // Réglages internes (modifiables pour les tests ou le diagnostic).
   const config = {
@@ -33,7 +37,7 @@
   const breaker = new Map();     // "provider:model" -> {until, code}
   const noThinking = new Set();  // modèles qui refusent thinkingConfig
   const deadKeys = {};           // provider -> empreinte de la clé refusée (401/403)
-  const lastDiscoverTry = { gemini: 0, claude: 0 };
+  const lastDiscoverTry = { gemini: 0, claude: 0, groq: 0 };
   let lastOk = null;
   let discovering = null;
 
@@ -51,7 +55,7 @@
 
   function keyOf(p) {
     const s = settings();
-    const k = p === 'gemini' ? s.geminiKey : p === 'claude' ? s.claudeKey : '';
+    const k = p === 'gemini' ? s.geminiKey : p === 'claude' ? s.claudeKey : p === 'groq' ? s.groqKey : '';
     return typeof k === 'string' ? k.trim() : '';
   }
 
@@ -340,6 +344,18 @@
     return null;
   }
 
+  // Groq : on ne garde que les gros modèles généralistes, classés par qualité de réponse.
+  const EXCLUDE_GROQ = /whisper|guard|tts|playai|orpheus|compound|distil|instant|safeguard|allam|-8b|-1b|-3b|mini|scout|20b/i;
+  function groqInfo(id) {
+    id = String(id || '');
+    if (!id || EXCLUDE_GROQ.test(id)) return null;
+    const score = /kimi-k2/.test(id) ? 90 : /gpt-oss-120b/.test(id) ? 84 : /llama-3\.3-70b/.test(id) ? 80 : /llama-4-maverick/.test(id) ? 78 : /qwen3-32b/.test(id) ? 70 : 0;
+    return score ? { id, score: score + (/\d{4}$/.test(id) ? 1 : 0) } : null;
+  }
+  function rankGroq(ids) {
+    return (ids || []).map(groqInfo).filter(Boolean).sort((a, b) => b.score - a.score).map(i => i.id).slice(0, 3);
+  }
+
   function bestPerVersion(infos, scoreFn) {
     const by = {};
     infos.forEach(i => {
@@ -370,6 +386,7 @@
   }
 
   function usable(p, ids) {
+    if (p === 'groq') return rankGroq(ids);
     if (p === 'gemini') {
       return (ids || []).map(geminiInfo).filter(Boolean)
         .sort((a, b) => (a.tier === b.tier ? b.score - a.score : ['flash', 'lite', 'pro'].indexOf(a.tier) - ['flash', 'lite', 'pro'].indexOf(b.tier)))
@@ -389,7 +406,9 @@
 
   function providerOrder(s) {
     const pref = (s || settings()).provider;
-    return pref === 'claude' ? ['claude', 'gemini'] : ['gemini', 'claude'];
+    if (pref === 'claude') return ['claude', 'gemini', 'groq'];
+    if (pref === 'groq') return ['groq', 'gemini', 'claude'];
+    return ['gemini', 'claude', 'groq'];
   }
 
   function settingPurpose(purpose) {
@@ -398,12 +417,13 @@
 
   function parseModelRef(ref) {
     if (!ref) return null;
-    if (typeof ref === 'object' && ref.model) return { provider: ref.provider || (/^claude/.test(ref.model) ? 'claude' : 'gemini'), model: ref.model };
+    const provOf = (m) => /^claude/.test(m) ? 'claude' : /^gemini|^models\//.test(m) ? 'gemini' : 'groq';
+    if (typeof ref === 'object' && ref.model) return { provider: ref.provider || provOf(ref.model), model: ref.model };
     const s = String(ref).trim();
     if (!s || s === 'auto') return null;
-    const m = s.match(/^(gemini|claude):(.+)$/);
+    const m = s.match(/^(gemini|claude|groq):(.+)$/);
     if (m) return { provider: m[1], model: m[2] };
-    return { provider: /^claude/.test(s) ? 'claude' : 'gemini', model: s.replace(/^models\//, '') };
+    return { provider: provOf(s), model: s.replace(/^models\//, '') };
   }
 
   function rankAll(purpose, keysOnly) {
@@ -412,7 +432,7 @@
     let list = [];
     provs.forEach(p => {
       const ids = modelsFor(p);
-      (p === 'gemini' ? rankGemini(ids, purpose) : rankClaude(ids, purpose)).forEach(m => list.push({ provider: p, model: m }));
+      (p === 'gemini' ? rankGemini(ids, purpose) : p === 'claude' ? rankClaude(ids, purpose) : rankGroq(ids)).forEach(m => list.push({ provider: p, model: m }));
     });
     const pref = parseModelRef(s.models && s.models[settingPurpose(purpose)]);
     if (pref && (!keysOnly || keyOf(pref.provider))) {
@@ -450,6 +470,7 @@
 
   function supportsParts(provider, parts) {
     if (provider === 'gemini') return true;
+    if (provider === 'groq') return (parts || []).every(p => p && typeof p.text === 'string');
     return (parts || []).every(p => p && (typeof p.text === 'string' || claudeMediaOk(partMime(p))));
   }
 
@@ -506,6 +527,16 @@
     return ids;
   }
 
+  async function listGroq(key) {
+    const att = makeAttempt(null, 'groq', 'models', false);
+    att.arm(config.discoverTimeoutMs, false);
+    try {
+      const res = await doFetch(GROQ_API + '/models', { method: 'GET', headers: { Authorization: 'Bearer ' + key } }, att);
+      const j = await readJSON(res, att);
+      return (j.data || []).filter(m => m && m.id && m.active !== false).map(m => String(m.id));
+    } finally { att.done(); }
+  }
+
   async function listClaude(key) {
     const ids = [];
     let after = '';
@@ -529,7 +560,7 @@
     if (discovering && !opts.force) return discovering;
     const run = (async () => {
       const cache = readCache();
-      const out = { gemini: [], claude: [] };
+      const out = { gemini: [], claude: [], groq: [] };
       for (const p of PROVIDERS) {
         const k = keyOf(p);
         if (!k) continue;
@@ -539,7 +570,7 @@
         if (fresh && !opts.force) { out[p] = c.ids; continue; }
         lastDiscoverTry[p] = Date.now();
         try {
-          const ids = usable(p, p === 'gemini' ? await listGemini(k) : await listClaude(k));
+          const ids = usable(p, p === 'gemini' ? await listGemini(k) : p === 'claude' ? await listClaude(k) : await listGroq(k));
           if (ids.length) cache[p] = { at: Date.now(), fp, ids };
           out[p] = ids.length ? ids : (c && c.fp === fp && c.ids) || [];
         } catch (e) {
@@ -723,6 +754,89 @@
     return { text: full, finish: stop };
   }
 
+  /* ---------------------------------------------------------------- Groq */
+
+  function groqBody(model, o, v) {
+    let system = o.system ? String(o.system) : '';
+    if (o.json) system += (system ? '\n\n' : '') + JSON_ONLY;
+    const messages = [];
+    if (system) messages.push({ role: 'system', content: system });
+    (o.history || []).forEach(h => {
+      if (h && h.text) messages.push({ role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user', content: String(h.text) });
+    });
+    const text = (o.parts || []).filter(p => p && typeof p.text === 'string').map(p => p.text).concat(o.prompt ? [String(o.prompt)] : []).join('\n\n');
+    messages.push({ role: 'user', content: text || '…' });
+    const body = { model, messages, max_tokens: v.maxTokens || o.maxTokens || 1024 };
+    if (typeof o.temperature === 'number' && !v.noTemperature) body.temperature = Math.max(0, Math.min(1, o.temperature));
+    if (o.json && !v.noJsonMode) body.response_format = { type: 'json_object' };
+    // GPT-OSS raisonne avant d'écrire : raisonnement court et caché pour garder la vitesse.
+    if (/gpt-oss/.test(model) && !v.noReasoning) { body.reasoning_effort = 'low'; body.include_reasoning = false; }
+    if (o.stream) body.stream = true;
+    return body;
+  }
+
+  async function groqRequest(model, o, v, att) {
+    const res = await doFetch(GROQ_API + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keyOf('groq') },
+      body: JSON.stringify(groqBody(model, o, v))
+    }, att);
+    let full = '';
+    let finish = null;
+    if (o.stream) {
+      await readSSE(res, att, (d) => {
+        if (!d || d === '[DONE]') return;
+        let j;
+        try { j = JSON.parse(d); } catch (e) { return; }
+        if (j.error) throw httpError('groq', model, Number(j.error.code) || 500, JSON.stringify(j));
+        const c = j.choices && j.choices[0];
+        if (!c) return;
+        if (c.finish_reason) finish = c.finish_reason;
+        const t = c.delta && typeof c.delta.content === 'string' ? c.delta.content : '';
+        if (t) { full += t; att.onText(full); }
+      });
+    } else {
+      const j = await readJSON(res, att);
+      const c = j.choices && j.choices[0];
+      full = (c && c.message && c.message.content) || '';
+      finish = (c && c.finish_reason) || null;
+    }
+    if (!full.trim() && !o.allowEmpty) throw aiError('EMPTY', frMessage('EMPTY', 'groq'), { provider: 'groq', model, finish });
+    return { text: full, finish };
+  }
+
+  // Whisper (Groq) : transcription très rapide d'un segment WAV.
+  async function groqWhisper(wavBlob, hint, signal, timeoutMs) {
+    let lastErr = null;
+    for (const model of WHISPER) {
+      const b = breaker.get('groq:' + model);
+      if (b && b.until > Date.now()) continue;
+      const att = makeAttempt(signal, 'groq', model, false);
+      att.arm(timeoutMs || 12000, false);
+      try {
+        const fd = new FormData();
+        fd.append('file', wavBlob, 'segment.wav');
+        fd.append('model', model);
+        fd.append('language', 'fr');
+        fd.append('response_format', 'json');
+        fd.append('temperature', '0');
+        if (hint) fd.append('prompt', hint.slice(0, 600));
+        const t0 = now();
+        const res = await doFetch(GROQ_API + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + keyOf('groq') }, body: fd }, att);
+        const j = await readJSON(res, att);
+        emit('ai:status', { provider: 'groq', model, ok: true, ms: Math.round(now() - t0), purpose: 'fast', error: null });
+        return { text: String(j.text || ''), model, provider: 'groq', ms: Math.round(now() - t0) };
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw e;
+        lastErr = e;
+        emit('ai:status', { provider: 'groq', model, ok: false, purpose: 'fast', error: e && e.message, code: e && e.code });
+        if (e && e.code === 'KEY') break;
+        if (e && (e.code === 'QUOTA' || e.code === 'SERVER' || e.code === 'TIMEOUT')) trip({ provider: 'groq', model }, config.breakerMs, e.code);
+      } finally { att.done(); }
+    }
+    throw lastErr || aiError('ALL_FAILED', 'Whisper indisponible.');
+  }
+
   /* ------------------------------------------------------- génération + bascule */
 
   async function callOnce(c, o, v) {
@@ -737,7 +851,8 @@
     if (stream) att.arm(o.firstTokenMs || o.timeoutMs || config.firstTokenMs, true);
     else att.arm(o.timeoutMs || config.totalMs, false);
     try {
-      const r = c.provider === 'gemini' ? await geminiRequest(c.model, o, v, att) : await claudeRequest(c.model, o, v, att);
+      const r = c.provider === 'gemini' ? await geminiRequest(c.model, o, v, att)
+        : c.provider === 'groq' ? await groqRequest(c.model, o, v, att) : await claudeRequest(c.model, o, v, att);
       r.firstAt = att.first || now();
       return r;
     } catch (e) {
@@ -762,6 +877,8 @@
         if (!v.maxTokens && /max_?(?:output_?)?tokens|maxOutputTokens/i.test(d) && (o.maxTokens || 0) > 8192) { v.maxTokens = 8192; continue; }
         if (c.provider === 'gemini' && v.thinking && thinkingFor(c.model)) { v.thinking = false; continue; }
         if (c.provider === 'claude' && !v.noTemperature && /temperature/i.test(d)) { v.noTemperature = true; continue; }
+        if (c.provider === 'groq' && !v.noReasoning && /gpt-oss/.test(c.model) && /reasoning/i.test(d)) { v.noReasoning = true; continue; }
+        if (c.provider === 'groq' && o.json && !v.noJsonMode && /response_format|json/i.test(d)) { v.noJsonMode = true; continue; }
         throw e;
       }
     }
@@ -1643,10 +1760,19 @@
 
   async function transcribe(wavBlob, opts) {
     opts = opts || {};
+    const hint = String(opts.hint || opts.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    // Whisper sur Groq d'abord (bien plus rapide), Gemini en secours.
+    if (keyOf('groq')) {
+      try {
+        const w = await groqWhisper(wavBlob, hint, opts.signal, opts.timeoutMs);
+        return { text: cleanTranscript(w.text), model: w.model, provider: 'groq', ms: w.ms };
+      } catch (e) {
+        if ((e && e.name === 'AbortError') || !keyOf('gemini')) throw e;
+      }
+    }
     if (!keyOf('gemini')) throw noKeyError({ providers: ['gemini'] });
     const data = await blobToBase64(wavBlob);
     const mime = (wavBlob && wavBlob.type) || 'audio/wav';
-    const hint = String(opts.hint || opts.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
     const prompt = [
       'Transcris mot à mot, en français, ce qui est dit dans cet extrait audio (entretien d\'embauche).',
       '- Écris uniquement les paroles prononcées : pas de commentaire, pas d\'horodatage, pas de nom de locuteur, pas de description de sons.',
@@ -1662,6 +1788,9 @@
   }
 
   /* ------------------------------------------------------------- extractFile */
+
+  // Transcription anticipée possible seulement avec Whisper (Groq) : rapide et sans entamer le quota Gemini.
+  function canPeek() { return !!keyOf('groq'); }
 
   async function extractFile(blob, mime, opts) {
     opts = opts || {};
@@ -1721,7 +1850,7 @@
   }
 
   S.ai = {
-    hasKey, discover, pick, generate, transcribe, answer, buildPrep, recap,
+    hasKey, canPeek, discover, pick, generate, transcribe, answer, buildPrep, recap,
     trainingNext, trainingFeedback, extractFile, test,
     // extensions (hors contrat minimal, utiles à l'UI et aux tests)
     config, state, reset, context: contextFor, parseJson: parseJsonLoose, cleanTranscript,

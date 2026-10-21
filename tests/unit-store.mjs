@@ -58,7 +58,7 @@ async function rejects(promise, code) {
 
   const def = S.store.settings();
   check('réglages par défaut (SPEC)', JSON.stringify(def) === JSON.stringify({
-    geminiKey: '', claudeKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' },
+    geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' },
     theme: 'auto', fontScale: 1, lang: 'fr-FR', autoAnswer: true, answerDelayMs: 900, onboarded: false
   }), JSON.stringify(def));
   def.theme = 'dark';

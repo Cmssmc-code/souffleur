@@ -1214,7 +1214,7 @@
   ];
 
   function keyRow(p) {
-    const k = p.id === 'gemini' ? 'geminiKey' : 'claudeKey';
+    const k = p.id + 'Key';
     const v = settings()[k] || '';
     return `<div class="list-row st-key">
       <div class="st-key-head"><div class="st-key-name">${tile(p.icon, p.color)}<b>${p.name}</b>${p.badge}</div>
@@ -1246,14 +1246,15 @@
       ${section('Clés d’intelligence artificielle', `
         ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite · recommandée</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir une clé gratuite', placeholder: 'AIza…', hint: 'Transcription du recruteur, réponses et préparation.' })}
         ${keyRow({ id: 'claude', name: 'Anthropic Claude', icon: 'shield', color: 'orange', badge: '<span class="pill">Secours · payante</span>', url: 'https://console.anthropic.com/settings/keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'ant-…', hint: 'Facultative : prend le relais si Gemini est saturé.' })}
+        ${keyRow({ id: 'groq', name: 'Groq (Whisper + Kimi K2)', icon: 'bolt', color: 'violet', badge: '<span class="pill pill-ok">Gratuite · ultra-rapide</span>', url: 'https://console.groq.com/keys', linkLabel: 'Obtenir une clé gratuite', placeholder: 'gsk_…', hint: 'Transcription Whisper en ~0,3 s et 3e coureur pour les réponses.' })}
         <div class="list-row">${tile('person', 'gray')}${main('Se souvenir des clés sur cet appareil', 'Décochez sur un PC emprunté : les clés seront oubliées à la fermeture de l’onglet.')}
           ${sw('rememberKeys', s.rememberKeys !== false, 'Se souvenir des clés sur cet appareil')}</div>`)}
 
       ${section('Intelligence artificielle', `
-        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : Gemini d’abord, Claude en secours.')}
-          ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['gemini', 'Gemini'], ['claude', 'Claude']])}</div>
-        <div class="list-row">${tile('bolt', 'blue')}${main('Course Gemini / Claude', 'Avec les deux clés : la question part sur les deux, la réponse la plus rapide s’affiche.')}
-          ${sw('race', s.race !== false, 'Course Gemini / Claude')}</div>
+        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : Gemini d’abord, puis Claude et Groq en secours.')}
+          ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['gemini', 'Gemini'], ['claude', 'Claude'], ['groq', 'Groq']])}</div>
+        <div class="list-row">${tile('bolt', 'blue')}${main('Course entre IA', 'Avec plusieurs clés : la question part sur toutes, la réponse la plus rapide s’affiche.')}
+          ${sw('race', s.race !== false, 'Course entre IA')}</div>
         ${PURPOSES.map(([p, label, sub]) => `<div class="list-row st-model st-wrap">${tile(p === 'answer' ? 'sparkles' : p === 'fast' ? 'waveform' : 'doc', p === 'answer' ? 'blue' : p === 'fast' ? 'teal' : 'green')}${main(label, sub, `data-auto="${p}"`)}
           <select data-model="${p}" aria-label="Modèle : ${esc(label)}"><option value="auto">Automatique</option>${models[p] && models[p] !== 'auto' ? `<option value="${esc(models[p])}" selected>${esc(models[p])}</option>` : ''}</select></div>`).join('')}
         <div class="list-row">${tile('refresh', 'gray')}<span class="list-main"><small data-models-status>Liste des modèles : automatique.</small></span>
@@ -1385,7 +1386,7 @@
         if (typeof S.store.clearAll === 'function') await S.store.clearAll();
         const all = await S.store.list();
         for (const d of all || []) await S.store.remove(d.id);
-        setSettings({ geminiKey: '', claudeKey: '', onboarded: false });
+        setSettings({ geminiKey: '', claudeKey: '', groqKey: '', onboarded: false });
         [window.localStorage, window.sessionStorage].forEach((stg) => {
           try { Object.keys(stg).filter((k) => /^souffleur/i.test(k)).forEach((k) => stg.removeItem(k)); } catch (e) { /* ignore */ }
         });

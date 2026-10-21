@@ -47,7 +47,7 @@ function makeEnv(settings = {}) {
   };
   const ctx = {
     console, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
-    TextDecoder, TextEncoder, ReadableStream, Response, Headers, Blob, AbortController, AbortSignal,
+    TextDecoder, TextEncoder, ReadableStream, Response, Headers, Blob, FormData, AbortController, AbortSignal,
     URL, URLSearchParams, btoa, atob, structuredClone, performance, DOMException,
     localStorage: memStorage(), sessionStorage: memStorage(),
     navigator: { onLine: true, userAgent: 'node-test', language: 'fr-FR' }
@@ -315,6 +315,30 @@ test('answer : course Gemini / Claude, le premier qui écrit gagne, l\'autre est
   const r2 = await solo.ai.answer({ dossier, question: 'Pourquoi ce poste ?', mode: 'force' });
   assert.equal(r2.provider, 'gemini');
   assert.ok(!solo.calls.some(isClaude), 'course désactivée : Claude non sollicité');
+});
+
+test('Groq : gros modèles seulement, flux SSE OpenAI, Whisper prioritaire pour la transcription', async () => {
+  const isGroq = c => c.url.startsWith('https://api.groq.com/');
+  const env = makeEnv({ groqKey: 'gsk-test' });
+  const picked = env.ai.pick('answer').filter(c => c.provider === 'groq').map(c => c.model);
+  assert.ok(picked.length && picked.every(m => !/instant|8b|whisper|guard/.test(m)), 'aucun petit modèle : ' + picked);
+  const chunk = t => 'data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: t } }] }) + '\n\n';
+  env.handler = (c) => {
+    if (c.url.endsWith('/audio/transcriptions')) return new Response(JSON.stringify({ text: ' Pourquoi le Recho ? ' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return bytesResponse(chunk('**Je veux ') + chunk('structurer.**') + 'data: [DONE]\n\n');
+  };
+  const deltas = [];
+  const r = await env.ai.generate({ prompt: 'Q', stream: true, onDelta: t => deltas.push(t) });
+  assert.equal(r.provider, 'groq');
+  assert.equal(r.text, '**Je veux structurer.**');
+  assert.deepEqual(deltas, ['**Je veux ', '**Je veux structurer.**']);
+  const call = env.calls.find(isGroq);
+  assert.equal(call.headers.Authorization || call.headers.authorization, 'Bearer gsk-test');
+  const wav = new Blob([new Uint8Array(64)], { type: 'audio/wav' });
+  const t = await env.ai.transcribe(wav, { hint: 'Recho' });
+  assert.equal(t.provider, 'groq');
+  assert.match(t.model, /^whisper/);
+  assert.equal(t.text, 'Pourquoi le Recho ?');
 });
 
 test('400 API_KEY_INVALID (Gemini) traité comme une clé refusée', async () => {

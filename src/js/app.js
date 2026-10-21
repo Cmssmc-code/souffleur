@@ -2377,7 +2377,7 @@
     const who = ev.who || 'them';
     if (!ev.text) delete L.interim[who];
     else L.interim[who] = String(ev.text);
-    if (who !== 'me' && ev.text) L.lastThemActivity = Date.now();
+    if (who !== 'me' && ev.text) { L.lastThemActivity = Date.now(); speculate(String(ev.text)); }
     paintInterims();
     paintMiniTranscripts();
   }
@@ -2569,6 +2569,48 @@
   }
   const isDash = (s) => /^\s*[—–-]?\s*$/.test(String(s || ''));
 
+  /* ---------- Réponse anticipée ----------
+   * Pendant que le recruteur parle encore, dès que le texte provisoire ressemble à une question, l'IA
+   * commence à répondre en coulisse. À la fin de la question, si elle est la même, on reprend ce flux
+   * déjà lancé au lieu d'en démarrer un nouveau : la réponse apparaît presque aussitôt. */
+  function speculate(text) {
+    if (!L || !L.running || L.paused || !hasKey() || !S.ai || !S.ai.answer || settings().speculate === false) return;
+    const q = String(text || '').trim();
+    const words = q.split(/\s+/).length;
+    if (words < 6) return;
+    const t = Date.now();
+    if (L.spec && (t - L.spec.at < 900 || words - L.spec.words < 3)) return;
+    const m = bestMatches(q, 1)[0];
+    if (!isQuestion(q) && !(m && m.score >= 0.45)) return;
+    if (L.spec && similarity(L.spec.q, q) >= 0.9) return;
+    if (L.spec && !L.spec.adopted) { try { L.spec.ctrl.abort(); } catch (e) { /* rien */ } }
+    const ctrl = new AbortController();
+    const spec = L.spec = { q, words, at: t, ctrl, text: '', listeners: [], adopted: false };
+    const previous = L.entries.filter((x) => x.text && !x.info && !x.streaming).slice(-6).map((x) => ({ question: x.question, answer: x.text }));
+    spec.promise = S.ai.answer({
+      dossier: L.d,
+      transcript: L.session.transcript.map((x) => ({ who: x.who, text: x.text })).concat([{ who: 'them', text: q }]),
+      question: q, previous, mode: 'force', signal: ctrl.signal,
+      onDelta: (full) => { spec.text = String(full || ''); spec.listeners.forEach((f) => f(spec.text)); }
+    });
+    spec.promise.catch(() => {});
+  }
+  // Reprend la réponse anticipée si la question finale est la même (sinon l'abandonne).
+  function takeSpec(question) {
+    const sp = L && L.spec;
+    if (!sp) return null;
+    L.spec = null;
+    if (Date.now() - sp.at < 30000 && similarity(sp.q, question) >= 0.7) { sp.adopted = true; return sp; }
+    try { sp.ctrl.abort(); } catch (e) { /* rien */ }
+    return null;
+  }
+  function adoptSpec(sp, req) {
+    req.signal.addEventListener('abort', () => { try { sp.ctrl.abort(); } catch (e) { /* rien */ } }, { once: true });
+    if (sp.text) req.onDelta(sp.text);
+    sp.listeners.push(req.onDelta);
+    return sp.promise;
+  }
+
   async function answerQuestion(question, mode, base) {
     if (!L || !L.running) return;
     question = String(question || '').trim();
@@ -2629,7 +2671,7 @@
     setAI({ kind: 'busy' });
     const previous = L.entries.filter((x) => x !== entry && x.text && !x.info && !x.streaming).slice(-6).map((x) => ({ question: x.question, answer: x.text }));
     try {
-      const res = await S.ai.answer({
+      const req = {
         dossier: L.d,
         transcript: L.session.transcript.map((x) => ({ who: x.who, text: x.text })),
         question,
@@ -2642,7 +2684,10 @@
           if (!entry.firstAt) entry.firstAt = Date.now();
           if (!raf) raf = requestAnimationFrame(reveal);
         }
-      });
+      };
+      const sp = (mode === 'auto' || mode === 'force') ? takeSpec(question) : null;
+      if (sp) entry.anticipated = true;
+      const res = sp ? await adoptSpec(sp, req) : await S.ai.answer(req);
       if (ctrl.signal.aborted || !L) return;
       entry.text = String((res && res.text) || entry.text || '');
       entry.streaming = false;
@@ -2698,8 +2743,6 @@
       return;
     }
     clearTimeout(L.autoTimer);
-    clearTimeout(L.stageTimer);
-    if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     answerQuestion(q, 'force');
   }
 
@@ -2865,8 +2908,6 @@
     L.paused = !L.paused;
     try { if (L.paused) S.audio.pause(); else S.audio.resume(); } catch (e) { console.warn(e); }
     clearTimeout(L.autoTimer);
-    clearTimeout(L.stageTimer);
-    if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     L.pendingThem = []; L.firstPendingAt = 0;
     $$('[data-act="pause"]', L.root).concat(L.pip ? $$('[data-act="pause"]', L.pip.win.document) : []).forEach((b) => {
       b.innerHTML = icon(L.paused ? 'play' : 'pause');
@@ -2942,6 +2983,7 @@
     L.running = false;
     clearTimeout(L.autoTimer);
     clearTimeout(L.stageTimer);
+    if (L.spec) { try { L.spec.ctrl.abort(); } catch (e) { /* rien */ } L.spec = null; }
     if (L.sim && 'speechSynthesis' in window) speechSynthesis.cancel();
     clearTimeout(L.saveTimer); L.saveTimer = null;
     clearInterval(L.clock);
@@ -3191,7 +3233,7 @@
 
   function onImportedKeys(x) {
     if (!x) return;
-    const names = (ks) => ks.map((k) => (k === 'claudeKey' ? 'Claude' : 'Gemini')).join(' et ');
+    const names = (ks) => ks.map((k) => (k === 'claudeKey' ? 'Claude' : k === 'groqKey' ? 'Groq' : 'Gemini')).join(' et ');
     if (x.applied && x.applied.length && x.sessionOnly) {
       // PC emprunté probable : la clé du fichier n'est gardée que pour cette session (onglet).
       sheet({

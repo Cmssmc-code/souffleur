@@ -431,6 +431,14 @@
       this._speech(false);
       return true;
     }
+    // Audio du passage encore en cours (pour une transcription anticipée), ou null.
+    peek() {
+      if (!this.seg || !this.collect) return null;
+      const fr = this.seg.frames;
+      const out = new Float32Array(fr.length * this.frameLen);
+      for (let k = 0; k < fr.length; k++) if (fr[k].data) out.set(fr[k].data, k * this.frameLen);
+      return { samples: out, durationMs: fr.length * this.frameMs, id: this.stats.starts };
+    }
     _emitFrames(frames, reason, forced) {
       let first = -1, last = -1, voiced = 0;
       for (let k = 0; k < frames.length; k++) {
@@ -1127,7 +1135,29 @@ registerProcessor('souffleur-tap', SouffleurTap);
       }
       this.ch.setState('restarting', { code: 'QUOTA_WAIT' });
     }
-    start() { this.ch.setState(this.ch.s.ctxRunning() ? 'listening' : 'starting'); }
+    start() {
+      this.ch.setState(this.ch.s.ctxRunning() ? 'listening' : 'starting');
+      clearInterval(this.peekTimer);
+      this.peekTimer = setInterval(() => this.peekTick(), 1400);
+    }
+    // Transcription anticipée : pendant que le recruteur parle encore, on transcrit ce qui a déjà été dit
+    // (Whisper sur Groq, rapide et peu coûteux) pour que l'app prépare la réponse avant la fin de la question.
+    async peekTick() {
+      const ch = this.ch, s = ch.s;
+      if (this.peeking || s.stopped || s.paused || !ch.vad || !S.ai || !S.ai.canPeek || !S.ai.canPeek()) return;
+      const pk = ch.vad.peek();
+      if (!pk || pk.durationMs < 1600 || pk.durationMs > 20000) return;
+      if (this.peekDone && this.peekDone.id === pk.id && pk.durationMs - this.peekDone.ms < 1200) return;
+      this.peeking = true;
+      try {
+        const r = await S.ai.transcribe(wavBlob(normalizePeak(pk.samples), TARGET_RATE), { hint: s.hint || '', peek: true, timeoutMs: 5000 });
+        const text = String((r && r.text) || '').replace(/\s+/g, ' ').trim();
+        this.peekDone = { id: pk.id, ms: pk.durationMs };
+        // Toujours le même passage ouvert ? (sinon la finale est déjà partie, inutile d'afficher du provisoire)
+        const still = ch.vad.peek();
+        if (text && still && still.id === pk.id && !s.stopped) { ch.interimShown = true; emit('interim', { who: ch.who, text, peek: true }); }
+      } catch (e) { /* anticipation facultative */ } finally { this.peeking = false; }
+    }
     segment(samples, segInfo) {
       const ch = this.ch, s = ch.s;
       const lagMs = ch.vad ? ch.vad.positionMs - segInfo.startMs : 0;
@@ -1187,7 +1217,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     tick() { /* rien : la VAD est cadencée par le flux audio */ }
     pause() { if (this.ch.vad) this.ch.vad.flush(); this.ch.setState('paused'); }
     resume() { if (this.ch.vad) this.ch.vad.reset(true); this.ch.setState('listening'); }
-    stop() { if (this.ch.vad) this.ch.vad.flush(); }
+    stop() { clearInterval(this.peekTimer); if (this.ch.vad) this.ch.vad.flush(); }
   }
 
   /* ------------------------------------------------------------------ canal (une voix) */
