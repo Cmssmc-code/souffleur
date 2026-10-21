@@ -743,6 +743,8 @@
         <button type="button" class="btn btn-primary btn-sm" data-go="#/settings">${icon('key')}<span>Ajouter une clé</span></button>
       </section>`}
 
+      <div data-b="vault"></div>
+
       ${next ? `<section class="hero card">
         <div class="hero-glow" aria-hidden="true"></div>
         <div class="hero-main">
@@ -793,6 +795,7 @@
       else if (act === 'wipe') cleanupSheet();
     });
     bindHomeDrop(root);
+    if (S.vault) S.vault.mount(root.querySelector('[data-b="vault"]'));
   }
 
   // Accueil : déposer un .souffleur.json l'importe ; déposer des documents crée un entretien avec ces documents.

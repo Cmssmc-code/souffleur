@@ -558,3 +558,10 @@
 
 /* Clés API : masquées sans type=password, pour que le gestionnaire de mots de passe ne les remplisse pas */
 .secret-input { -webkit-text-security: disc; text-security: disc; font-family: var(--font); letter-spacing: .08em; }
+
+/* Coffre : prochains entretiens préparés */
+.vault-card { margin-bottom: 16px; }
+.vault-form { margin-top: 14px; gap: 10px; flex-wrap: nowrap; }
+.vault-form .input { flex: 1 1 auto; min-width: 0; width: auto; }
+.vault-form select.input { -webkit-appearance: none; appearance: none; cursor: pointer; }
+@media (max-width: 640px) { .vault-form { flex-wrap: wrap; } .vault-form .input { flex-basis: 100%; } .vault-form .btn { flex: 1; } }

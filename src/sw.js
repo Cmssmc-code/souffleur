@@ -89,6 +89,15 @@ self.addEventListener('fetch', (event) => {
   if (url.origin === self.location.origin) {
     if (!url.href.startsWith(SCOPE.href)) return;
     if (url.pathname.endsWith('/sw.js') || url.pathname.includes('/.well-known/')) return;
+    // Encrypted interview dossiers change daily: network first, cache only as an offline fallback.
+    if (url.pathname.includes('/data/')) {
+      const key = url.href.split('?')[0];
+      event.respondWith(fetch(new Request(req, { cache: 'no-store' })).then((res) => {
+        if (res.ok) { const copy = res.clone(); event.waitUntil(caches.open(CACHE).then((c) => c.put(key, copy)).catch(() => {})); }
+        return res;
+      }).catch(async () => (await caches.match(key)) || Response.error()));
+      return;
+    }
     if (req.mode === 'navigate' || req.destination === 'document') {
       event.respondWith(handleNavigation(event, req, url));
     } else {
