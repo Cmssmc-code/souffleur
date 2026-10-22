@@ -520,6 +520,14 @@ await test('vraie réponse du candidat → pas un doublon ; même texte 40 s plu
   assert.equal(I.isEcho({ text: 'pouvez-vous vous présenter', t: 45000 }, { text: 'pouvez-vous vous présenter', t: 1000, durMs: 2000 }), false);
 });
 
+await test('haut-parleurs : passage du micro dit pendant la parole du recruteur → recouvrement', () => {
+  const spans = [{ from: 1000, to: 4000 }, { from: 9000, to: null }];
+  assert.ok(I.spanOverlap(1500, 3500, spans) >= 0.99);            // entièrement pendant le recruteur
+  assert.equal(I.spanOverlap(5000, 8000, spans), 0);                // le candidat répond dans le silence
+  assert.ok(Math.abs(I.spanOverlap(3000, 5000, spans) - 0.5) < 1e-9);
+  assert.ok(I.spanOverlap(9500, 11000, spans, 12000) >= 0.99);     // recruteur encore en train de parler
+});
+
 await test('niveau perceptif 0..1 (échelle dB -60 → 0)', () => {
   assert.equal(I.levelToUnit(0), 0);
   assert.equal(I.levelToUnit(1), 1);

@@ -488,7 +488,9 @@
       // pour ne jamais épuiser le quota des modèles qui servent aux réponses.
       const pref = parseModelRef(settings().models && settings().models[settingPurpose(o.purpose)]);
       const keep = list.filter(c => /lite/i.test(c.model) || (pref && c.provider === pref.provider && c.model === pref.model));
-      list = keep.length ? keep : list.slice(0, 1);
+      // Les autres modèles restent en dernier recours (quota des « lite » épuisé) : mieux vaut entamer le quota
+      // des réponses que perdre la voix du recruteur en plein entretien.
+      list = keep.length ? keep.concat(list.filter(c => keep.indexOf(c) < 0)) : list;
     }
     const forced = parseModelRef(o.model);
     if (forced && keyOf(forced.provider) && (!o.providers || o.providers.indexOf(forced.provider) >= 0)) {
@@ -1794,7 +1796,7 @@
     const r = await generate({
       purpose: 'fast', providers: ['gemini'], parts: [{ inline_data: { mime_type: mime, data } }], prompt,
       temperature: 0, maxTokens: 800, stream: false, timeoutMs: opts.timeoutMs || 15000, allowEmpty: true,
-      signal: opts.signal, budgetMs: opts.budgetMs || 30000, maxCandidates: 2, liteOnly: true
+      signal: opts.signal, budgetMs: opts.budgetMs || 30000, maxCandidates: 3, liteOnly: true
     });
     return { text: cleanTranscript(r.text), model: r.model, provider: r.provider, ms: r.ms };
   }

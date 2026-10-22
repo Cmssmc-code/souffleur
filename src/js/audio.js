@@ -137,6 +137,18 @@
     return overlap && containment(me.text, them.text) >= 0.75;
   }
 
+  /** Part (0..1) de l'intervalle [from, to] (ms) pendant laquelle le son du recruteur portait de la parole.
+   *  spans : [{ from, to|null }] ; to null = parole en cours (jusqu'à `nowT`). */
+  function spanOverlap(from, to, spans, nowT) {
+    const end = Math.max(to, from + 300);                   // passages très courts : au moins 300 ms
+    let hit = 0;
+    for (const s of spans || []) {
+      const a = Math.max(from, s.from), b = Math.min(end, s.to == null ? (nowT == null ? end : nowT) : s.to);
+      if (b > a) hit += b - a;
+    }
+    return Math.min(1, hit / (end - from));
+  }
+
   /* ------------------------------------------------------------------ DSP : niveau, WAV, rééchantillonnage */
   function levelToUnit(rms) {
     if (!(rms > 0)) return 0;
@@ -1301,6 +1313,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
       if (!active && this.speaking) this.speechDone += now() - this.speechFrom;
       this.speaking = active;
       if (!active) this.lastSpeechEnd = now();
+      if (this.role === 'them') this.s.noteThemSpeech(active);
       emit('speech', { who: this.who, active });
       if (this.engineKind === 'cloud') {
         if (active && !this.interimShown) { this.interimShown = true; emit('interim', { who: this.who, text: '…' }); }
@@ -1372,7 +1385,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
       this.ctx = null; this.sink = null; this.tapMode = 'none';
       this.channels = [];
       this.cleanups = [];
-      this.recentThem = []; this.heldMe = [];
+      this.recentThem = []; this.heldMe = []; this.themSpans = [];
       this.unlockArmed = false; this.offlineWarned = false; this.lastTick = 0;
       this.defaultMicLabel = '';
     }
@@ -1600,18 +1613,45 @@ registerProcessor('souffleur-tap', SouffleurTap);
       if (this.stopped && !this.draining) return;
       const item = Object.assign({ who: ch.who, text, t: Math.max(0, Math.round(t)) }, extra || {});
       if (ch.role === 'them') {
+        // Déjà affiché grâce au micro (haut-parleurs pendant une panne de transcription) : pas de doublon.
+        const dup = this.recentThem.some(r => r.viaMic && isEcho(item, r));
         this.recentThem.push({ text, t: item.t, durMs: item.durMs || 0, at: now() });
         const cut = now() - 60000;
         this.recentThem = this.recentThem.filter(r => r.at > cut);
-        emit('final', item);
+        if (!dup) emit('final', item);
         this.checkHeld();
         return;
       }
       if (ch.who === 'me' && this.channel('them')) {
         if (this.isEchoOfThem(item)) return;
-        if (this.themBusy()) { this.heldMe.push({ item, at: now() }); return; }
+        // Haut-parleurs : le micro entend aussi le recruteur. Si ce passage a été dit pendant que le son de
+        // l'appel portait de la parole, c'est la voix du recruteur, pas celle du candidat.
+        const ov = spanOverlap(item.t, now() - this.t0, this.themSpans, now() - this.t0);
+        if (ov >= 0.6 && this.themStalled()) return this.emitViaMic(item);
+        if (this.themBusy() || ov >= 0.6) { this.heldMe.push({ item, at: now(), ov }); return; }
       }
       emit('final', item);
+    }
+    /** Passage du recruteur capté par le micro : affiché comme « Recruteur » (la transcription de l'onglet est
+     *  en panne ou en retard), et mémorisé pour ignorer la même phrase quand la transcription reprend. */
+    emitViaMic(item) {
+      const it = Object.assign({}, item, { who: 'them', via: 'mic' });
+      this.recentThem.push({ text: it.text, t: it.t, durMs: Math.max(0, now() - this.t0 - it.t), at: now(), viaMic: true });
+      emit('final', it);
+    }
+    noteThemSpeech(active) {
+      const t = now() - this.t0, last = this.themSpans[this.themSpans.length - 1];
+      if (active) { if (!last || last.to != null) this.themSpans.push({ from: t, to: null }); }
+      else if (last && last.to == null) last.to = t;
+      if (this.themSpans.length > 200) this.themSpans.splice(0, this.themSpans.length - 200);
+    }
+    /** Transcription du recruteur en panne ou suspendue (quota, erreur, reconnexion). */
+    themStalled() {
+      const th = this.channel('them');
+      if (!th || th.ended) return false;
+      if (th.state === 'error' || th.state === 'restarting') return true;
+      const q = th.engine && th.engine.queue;
+      return !!(q && q.quotaWaitMs > 0);
     }
     isEchoOfThem(item) {
       for (const r of this.recentThem) if (isEcho(item, r)) return true;
@@ -1631,7 +1671,9 @@ registerProcessor('souffleur-tap', SouffleurTap);
         const h = this.heldMe[0];
         if (busy && t - h.at < 8000) break;
         this.heldMe.shift();
-        if (!this.isEchoOfThem(h.item)) emit('final', h.item);
+        if (this.isEchoOfThem(h.item)) continue;
+        if (h.ov >= 0.6) this.emitViaMic(h.item);
+        else emit('final', h.item);
       }
     }
 
@@ -1884,7 +1926,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     messages: MSG,
     _internals: {
       Vad, Resampler, TranscriptionQueue, encodeWav, decodeWav, wavBlob, normalizePeak, levelToUnit,
-      isEcho, isDuplicateText: (a, b) => isEcho({ text: a, t: 0 }, { text: b, t: 0 }), resolveConfig, WORKLET_SRC,
+      isEcho, spanOverlap, isDuplicateText: (a, b) => isEcho({ text: a, t: 0 }, { text: b, t: 0 }), resolveConfig, WORKLET_SRC,
       get session() { return current; },
     },
   };
