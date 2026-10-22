@@ -1159,12 +1159,14 @@ registerProcessor('souffleur-tap', SouffleurTap);
       if (this.peeking || s.stopped || s.paused || !ch.vad || !S.ai || !S.ai.canPeek || !S.ai.canPeek()) return;
       const pk = ch.vad.peek();
       if (!pk || pk.durationMs < 1600 || pk.durationMs > 20000) return;
-      if (this.peekDone && this.peekDone.id === pk.id && pk.durationMs - this.peekDone.ms < 1200) return;
+      // Au plus 2 anticipations par passage, espacées d'au moins 3 s d'audio : chaque essai renvoie tout le
+      // début de la phrase, et le quota gratuit de Groq (requêtes et secondes d'audio) s'épuise sinon en plein appel.
+      if (this.peekDone && this.peekDone.id === pk.id && (this.peekDone.n >= 2 || pk.durationMs - this.peekDone.ms < 3000)) return;
       this.peeking = true;
       try {
         const r = await S.ai.transcribe(wavBlob(normalizePeak(pk.samples), TARGET_RATE), { hint: s.hint || '', peek: true, timeoutMs: 5000 });
         const text = String((r && r.text) || '').replace(/\s+/g, ' ').trim();
-        this.peekDone = { id: pk.id, ms: pk.durationMs };
+        this.peekDone = { id: pk.id, ms: pk.durationMs, n: (this.peekDone && this.peekDone.id === pk.id ? this.peekDone.n : 0) + 1 };
         // Toujours le même passage ouvert ? (sinon la finale est déjà partie, inutile d'afficher du provisoire)
         const still = ch.vad.peek();
         if (text && still && still.id === pk.id && !s.stopped) { ch.interimShown = true; emit('interim', { who: ch.who, text, peek: true }); }

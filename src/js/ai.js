@@ -809,8 +809,13 @@
   }
 
   // Whisper (Groq) : transcription très rapide d'un segment WAV.
+  // Quota gratuit Groq (Whisper) : environ 20 requêtes par minute et un plafond de secondes d'audio par heure.
+  // On compte les appels pour réserver la marge aux transcriptions finales (l'anticipation passe après).
+  const whisperCalls = [];
+  function whisperRecent(ms) { const cut = Date.now() - ms; while (whisperCalls.length && whisperCalls[0] < cut) whisperCalls.shift(); return whisperCalls.length; }
   async function groqWhisper(wavBlob, hint, signal, timeoutMs) {
     let lastErr = null;
+    whisperCalls.push(Date.now());
     for (const model of WHISPER) {
       const b = breaker.get('groq:' + model);
       if (b && b.until > Date.now()) continue;
@@ -1804,7 +1809,11 @@
   /* ------------------------------------------------------------- extractFile */
 
   // Transcription anticipée possible seulement avec Whisper (Groq) : rapide et sans entamer le quota Gemini.
-  function canPeek() { return !!keyOf('groq'); }
+  function canPeek() {
+    if (!keyOf('groq')) return false;
+    if (whisperRecent(60000) >= 12) return false;                    // garder la marge pour les finales
+    return WHISPER.some(m => { const b = breaker.get('groq:' + m); return !(b && b.until > Date.now()); });
+  }
 
   async function extractFile(blob, mime, opts) {
     opts = opts || {};
