@@ -528,6 +528,45 @@ await test('haut-parleurs : passage du micro dit pendant la parole du recruteur 
   assert.ok(I.spanOverlap(9500, 11000, spans, 12000) >= 0.99);     // recruteur encore en train de parler
 });
 
+/* Session réduite à son aiguillage des finales : canal « them » (son de l'onglet, transcription cloud) et
+   canal « me » (micro). On simule la parole du recruteur via noteThemSpeech et l'état de sa transcription. */
+function fakeSession(themState) {
+  const s = new I.Session({ them: 'display', me: 'mic' }, {});
+  const q = { busy: false, quotaWaitMs: 0 };
+  const them = { role: 'them', who: 'them', ended: false, engineKind: 'cloud', state: themState || 'listening',
+    speaking: false, lastSpeechEnd: 0, engine: { queue: q } };
+  const me = { role: 'me', who: 'me', ended: false, engineKind: 'webspeech' };
+  s.channels = [them, me];
+  const out = [];
+  const offF = A.on('final', (e) => out.push(e));
+  return { s, them, me, q, out, offF };
+}
+await test('haut-parleurs + quota : la voix du recruteur captée par le micro reste « Recruteur », sans doublon', () => {
+  const { s, them, me, q, out, offF } = fakeSession('restarting');
+  q.quotaWaitMs = 30000;
+  s.t0 = Date.now() - 5000;                                  // la session a démarré il y a 5 s
+  s.themSpans = [{ from: 1000, to: null }];                  // le recruteur parle depuis t = 1 s
+  s.final(me, 'Pouvez-vous me parler de votre expérience en contrôle de gestion ?', 1500, { source: 'webspeech' });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].who, 'them');
+  assert.equal(out[0].via, 'mic');
+  // la transcription de l'onglet reprend et livre la même phrase : pas affichée deux fois
+  them.state = 'listening'; q.quotaWaitMs = 0;
+  s.final(them, 'Pouvez-vous me parler de votre expérience en contrôle de gestion ?', 1400, { source: 'cloud', durMs: 3000 });
+  assert.equal(out.length, 1);
+  offF();
+});
+await test('haut-parleurs, transcription saine : écho du micro écarté, vraie réponse du candidat gardée', () => {
+  const { s, them, me, out, offF } = fakeSession('listening');
+  s.t0 = Date.now() - 20000;
+  s.themSpans = [{ from: 1000, to: 4000 }];
+  s.final(them, 'Quelles sont vos prétentions salariales ?', 1000, { source: 'cloud', durMs: 3000 });
+  s.final(me, 'quelles sont vos prétentions salariales', 1200, { source: 'webspeech' });   // écho
+  s.final(me, "Autour de quarante-cinq mille euros brut annuel, ouvert à la discussion", 15000, { source: 'webspeech' });
+  assert.deepEqual(out.map(e => e.who), ['them', 'me']);
+  offF();
+});
+
 await test('niveau perceptif 0..1 (échelle dB -60 → 0)', () => {
   assert.equal(I.levelToUnit(0), 0);
   assert.equal(I.levelToUnit(1), 1);

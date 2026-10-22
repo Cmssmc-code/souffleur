@@ -1928,7 +1928,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     messages: MSG,
     _internals: {
       Vad, Resampler, TranscriptionQueue, encodeWav, decodeWav, wavBlob, normalizePeak, levelToUnit,
-      isEcho, spanOverlap, isDuplicateText: (a, b) => isEcho({ text: a, t: 0 }, { text: b, t: 0 }), resolveConfig, WORKLET_SRC,
+      Session, isEcho, spanOverlap, isDuplicateText: (a, b) => isEcho({ text: a, t: 0 }, { text: b, t: 0 }), resolveConfig, WORKLET_SRC,
       get session() { return current; },
     },
   };
