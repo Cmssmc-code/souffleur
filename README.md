@@ -129,6 +129,35 @@ rien et votre écran n'est pas partagé dans Meet. Vous pouvez cliquer sur « Ma
 Teams dans le navigateur (teams.microsoft.com) : suivez la procédure Meet (onglet + audio de l'onglet).
 Sur Mac, le son système n'est pas capturable : utilisez Meet ou Teams dans Chrome, ou le mode haut-parleur.
 
+### Appel décroché sur le PC (Lien avec Windows) ou partage audio muet : « Son du PC »
+
+Quand l'appel du téléphone est décroché sur le PC (Lien avec Windows / Phone Link), pour Teams ou Meet, ou
+quand le partage « audio du système » de Chrome reste muet, utilisez le mode **Appel ou visio sur ce PC
+(son interne)**. Tout le travail audio est fait hors de Chrome par un programme local, **Son du PC** :
+
+- il écoute **séparément** le son joué par Windows (boucle WASAPI = le correspondant) et le micro (vous) :
+  chaque phrase est attribuée à coup sûr, sans haut-parleur ni fenêtre de partage ;
+- il découpe les phrases (Silero) et les transcrit : **Groq Whisper turbo** (~0,3 s) si une clé Groq est
+  saisie dans les Réglages, sinon **Whisper sur le PC** (faster-whisper, ~0,5-2 s, sans Internet ni clé) ;
+  repli automatique sur le PC si Groq échoue ou tarde plus de 3 s ;
+- il envoie le texte en direct de la phrase du correspondant (questions préparées reconnues avant la fin) ;
+- sans casque, une phrase du micro prononcée pendant que le son du PC parle (écho) est ignorée ;
+- il suit seul les changements de périphérique (casque, Bluetooth) et ignore les périphériques « mains
+  libres » créés par Lien avec Windows pendant un appel (sinon les voix seraient inversées).
+
+1. Une fois pour toutes : clic droit sur `tools/son-pc/Installer-Son-du-PC.ps1` → *Exécuter avec PowerShell*
+   (modules Python `pyaudiowpatch numpy websockets faster-whisper`, modèle Whisper « base », lancement à
+   chaque ouverture de session ; `-Uninstall` pour le retirer).
+2. Dans Souffleur : **Lancer l'entretien** → **Appel ou visio sur ce PC (son interne)** : la ligne
+   « Son du PC (interne) » doit être verte → **Démarrer**.
+3. Décrochez l'appel **sur le PC** (dans Lien avec Windows, cliquez sur le PC, ou « Transférer vers
+   l'ordinateur » si l'appel a été pris sur le téléphone). Casque conseillé ; « Ne pas déranger » activé :
+   tout le son du PC est écouté.
+
+Le programme n'accepte que le site Souffleur et `localhost` (aucune autre page ne peut écouter le PC ni lire
+les transcriptions) et écrit son journal dans `%LOCALAPPDATA%\Souffleur\son-pc.log`. Réglages :
+`SOUFFLEUR_MODELE` = `auto` (base, puis small sur secteur si assez rapide) | `base` | `small`.
+
 ### Sans clé ou sans casque
 
 Choisissez **Haut-parleur ou téléphone à côté** ou **Visio sur ce PC, son sur haut-parleurs (sans clé)** :

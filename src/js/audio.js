@@ -52,6 +52,9 @@
     DUAL_WEBSPEECH: "Deux reconnaissances vocales simultanées peuvent se gêner : préférez la transcription IA pour l'une des deux voix.",
     WEBSPEECH_TRACK: "Reconnaissance vocale sur une source autre que le micro : nécessite un Chrome récent.",
     WEBSPEECH_TRACK_OFF: "Reconnaissance vocale : retour au micro par défaut de Chrome.",
+    PC_AUDIO_OFF: "« Son du PC » n'est pas lancé : double-cliquez sur « Son du PC Souffleur » (ou choisissez un autre mode).",
+    PC_AUDIO_LOST: "« Son du PC » s'est arrêté : reconnexion…",
+    PC_AUDIO_BACK: "« Son du PC » reconnecté.",
     BAD_CONFIG: "Configuration audio invalide.",
     ABORTED: "Démarrage annulé.",
   };
@@ -781,6 +784,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
 
   const PRESETS = Object.freeze([
     Object.freeze({ id: 'visio-casque', label: 'Visio sur ce PC (Meet / Teams)', them: 'display', themEngine: 'cloud', me: 'mic', meEngine: 'webspeech', needsKey: true }),
+    Object.freeze({ id: 'pc-interne', label: 'Appel ou visio sur ce PC (son interne)', them: 'pc', themEngine: 'local', me: 'mic', meEngine: 'local', needsKey: false }),
     Object.freeze({ id: 'haut-parleur', label: 'Haut-parleur ou téléphone à côté', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false }),
     Object.freeze({ id: 'visio-hp', label: 'Visio sur ce PC, son sur haut-parleurs', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false, meTrack: true }),
     Object.freeze({ id: 'micro-cloud', label: 'Micro seul, transcription IA (bruit, accents)', them: null, me: 'mic', meEngine: 'cloud', mixed: true, needsKey: true }),
@@ -792,6 +796,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     const k = String(v).toLowerCase();
     if (['display', 'tab', 'screen', 'system', 'onglet'].includes(k)) return 'display';
     if (['mic', 'micro', 'microphone'].includes(k)) return 'mic';
+    if (['pc', 'son-pc', 'local', 'wasapi'].includes(k)) return 'pc';
     throw audioError('BAD_CONFIG');
   }
   function normEngine(v, dflt) {
@@ -799,6 +804,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     const k = String(v).toLowerCase();
     if (k === 'cloud' || k === 'ai' || k === 'gemini') return 'cloud';
     if (k === 'webspeech' || k === 'speech' || k === 'chrome') return 'webspeech';
+    if (k === 'local' || k === 'python' || k === 'son-pc' || k === 'whisper') return 'local';
     throw audioError('BAD_CONFIG');
   }
   function resolveConfig(x) {
@@ -819,6 +825,9 @@ registerProcessor('souffleur-tap', SouffleurTap);
       meTrack: !!p.meTrack,   // Web Speech alimenté par notre piste micro (sans annulation d'écho), repli automatique
     };
     if (!cfg.them && !cfg.me) throw audioError('BAD_CONFIG');
+    // Moteur local (programme Son du PC) : il capte et transcrit les deux voix ; la page n'ouvre aucun périphérique.
+    cfg.local = (cfg.them && cfg.themEngine === 'local') || (cfg.me && cfg.meEngine === 'local');
+    if (cfg.local) { if (cfg.them) cfg.themEngine = 'local'; if (cfg.me) cfg.meEngine = 'local'; cfg.mixed = false; }
     cfg.needsKey = !!((cfg.them && cfg.themEngine === 'cloud') || (cfg.me && cfg.meEngine === 'cloud'));
     return cfg;
   }
@@ -896,6 +905,244 @@ registerProcessor('souffleur-tap', SouffleurTap);
     if (n === 'InvalidStateError') return 'DISPLAY_NEEDS_GESTURE';
     return 'DISPLAY_UNSUPPORTED';
   }
+  /**
+   * « Son du PC » : le programme local tools/son-pc/souffleur_son_pc.py copie la sortie audio de Windows
+   * (boucle WASAPI) et l'envoie en WebSocket (en-tête JSON {rate}, puis PCM 16 bits mono). On le rejoue dans
+   * une piste MediaStream : le reste du moteur (VAD, transcription IA) la traite comme un partage d'onglet.
+   * Utile quand le partage « audio du système » de Chrome reste muet, et sans aucune fenêtre de partage.
+   */
+  const PC_AUDIO_URL = 'ws://127.0.0.1:47800/son';
+  const PC_WORKLET = `class SouffleurPcAudio extends AudioWorkletProcessor {
+    constructor() { super(); this.q = []; this.cur = null; this.i = 0;
+      this.port.onmessage = (e) => { this.q.push(e.data); if (this.q.length > 60) this.q.splice(0, this.q.length - 10); }; }
+    process(_, outputs) {
+      const out = outputs[0][0];
+      for (let k = 0; k < out.length; k++) {
+        if (!this.cur || this.i >= this.cur.length) { this.cur = this.q.shift() || null; this.i = 0; if (!this.cur) { out.fill(0, k); break; } }
+        out[k] = this.cur[this.i++];
+      }
+      return true;
+    }
+  }
+  registerProcessor('souffleur-pc-audio', SouffleurPcAudio);`;
+  function openPcSocket(url, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      let ws;
+      try { ws = new WebSocket(url); } catch (e) { reject(audioError('PC_AUDIO_OFF', e)); return; }
+      ws.binaryType = 'arraybuffer';
+      const fail = (e) => { clearTimeout(timer); try { ws.close(); } catch (x) { /* ignore */ } reject(audioError('PC_AUDIO_OFF', e)); };
+      const timer = setTimeout(() => fail(new Error('timeout')), timeoutMs);
+      ws.onerror = () => fail(new Error('connexion refusée'));
+      ws.onclose = (e) => fail(new Error('fermé ' + e.code + ' ' + (e.reason || '')));
+      ws.onmessage = (e) => {
+        if (typeof e.data !== 'string') return;
+        clearTimeout(timer);
+        let head = null;
+        try { head = JSON.parse(e.data); } catch (x) { /* ignore */ }
+        if (!head || !(head.rate > 0)) { fail(new Error('en-tête invalide')); return; }
+        ws.onerror = ws.onclose = ws.onmessage = null;
+        resolve({ ws, head });
+      };
+    });
+  }
+  async function getPcAudio(o = {}) {
+    if (typeof WebSocket !== 'function') throw audioError('PC_AUDIO_OFF');
+    const url = o.url || PC_AUDIO_URL;
+    let { ws, head } = await openPcSocket(url, 2500);
+    const AC = G.AudioContext || G.webkitAudioContext;
+    if (!AC) { try { ws.close(); } catch (e) { /* ignore */ } throw audioError('AUDIO_ENGINE'); }
+    const ctx = new AC({ sampleRate: head.rate, latencyHint: 'interactive' });
+    let node;
+    try {
+      const mod = URL.createObjectURL(new Blob([PC_WORKLET], { type: 'text/javascript' }));
+      try { await ctx.audioWorklet.addModule(mod); } finally { URL.revokeObjectURL(mod); }
+      node = new AudioWorkletNode(ctx, 'souffleur-pc-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+    } catch (e) {
+      try { ws.close(); } catch (x) { /* ignore */ }
+      try { ctx.close(); } catch (x) { /* ignore */ }
+      throw audioError('AUDIO_ENGINE', e);
+    }
+    const dest = ctx.createMediaStreamDestination();
+    node.connect(dest);
+    if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) { /* réessai ci-dessous */ } }
+    let stopped = false, retry = null, lost = false;
+    // Contexte mis en veille (onglet masqué, politique de lecture) : on le relance, sinon la piste devient muette.
+    const wake = () => { if (!stopped && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); };
+    ctx.onstatechange = wake;
+    const gestures = ['pointerdown', 'keydown'];
+    if (hasDoc) gestures.forEach(g => document.addEventListener(g, wake, true));
+    const wakeTimer = setInterval(wake, 2000);
+    const feed = (e) => {
+      if (typeof e.data === 'string') return;
+      const s = new Int16Array(e.data), f = new Float32Array(s.length);
+      for (let k = 0; k < s.length; k++) f[k] = s[k] / 32768;
+      node.port.postMessage(f, [f.buffer]);
+    };
+    const attach = (w) => {
+      ws = w;
+      ws.onmessage = feed;
+      ws.onclose = () => { if (stopped) return; if (!lost) { lost = true; info('them', 'PC_AUDIO_LOST', 'warn'); } retry = setTimeout(reconnect, 2000); };
+    };
+    const reconnect = async () => {
+      if (stopped) return;
+      try {
+        const r = await openPcSocket(url, 2500);
+        if (stopped) { try { r.ws.close(); } catch (e) { /* ignore */ } return; }
+        attach(r.ws);
+        if (lost) { lost = false; info('them', 'PC_AUDIO_BACK', 'info'); }
+      } catch (e) { if (!stopped) retry = setTimeout(reconnect, 2000); }
+    };
+    attach(ws);
+    const stream = dest.stream;
+    const track = stream.getAudioTracks()[0];
+    const stopTrack = track.stop.bind(track);
+    track.stop = () => {
+      stopped = true;
+      clearTimeout(retry);
+      clearInterval(wakeTimer);
+      ctx.onstatechange = null;
+      if (hasDoc) gestures.forEach(g => document.removeEventListener(g, wake, true));
+      try { ws.close(); } catch (e) { /* ignore */ }
+      try { node.disconnect(); } catch (e) { /* ignore */ }
+      try { ctx.close(); } catch (e) { /* ignore */ }
+      stopTrack();
+    };
+    stream.pcDevice = head.device || '';
+    return stream;
+  }
+  /**
+   * Moteur « local » : le programme Son du PC capte lui-même le son du PC (correspondant) et le micro (vous),
+   * découpe les phrases (Silero) et les transcrit sur le PC (Whisper). La page reçoit des phrases déjà
+   * attribuées : aucune capture, aucune reconnaissance vocale ni clé côté navigateur.
+   * Protocole : voir tools/son-pc/souffleur_son_pc.py (ws://127.0.0.1:47800/transcription).
+   */
+  const LOCAL_URL = 'ws://127.0.0.1:47800/transcription';
+  class LocalLink {
+    constructor(s, url) {
+      this.s = s; this.url = url || LOCAL_URL;
+      this.ws = null; this.closed = false; this.lost = false; this.retry = null;
+      this.ready = false; this.model = ''; this.devices = {};
+      this.drainWait = null;
+    }
+    /** Première connexion : résout à « ready » (modèle chargé), rejette PC_AUDIO_OFF si le programme ne répond pas. */
+    open(timeoutMs = 4000) {
+      return new Promise((resolve, reject) => {
+        let settled = false, loading = false;
+        const done = (err) => {
+          if (settled) return;
+          settled = true; clearTimeout(timer);
+          if (err) { this.closed = true; try { if (this.ws) this.ws.close(); } catch (e) { /* ignore */ } reject(err); } else resolve();
+        };
+        // Chargement du modèle Whisper (premier lancement) : on attend plus longtemps tant qu'il le signale.
+        const timer = setTimeout(() => done(audioError('PC_AUDIO_OFF', new Error(loading ? 'modèle trop long à charger' : 'aucune réponse'))), timeoutMs);
+        this.connect((m) => {
+          if (m.type === 'info' && m.code === 'MODEL_LOADING' && !loading) { loading = true; clearTimeout(timer); setTimeout(() => done(audioError('PC_AUDIO_OFF', new Error('modèle trop long à charger'))), 60000); }
+          if (m.type === 'ready') done(null);
+        }, () => done(audioError('PC_AUDIO_OFF', new Error('connexion refusée'))));
+      });
+    }
+    connect(onFirst, onFail) {
+      let ws;
+      try { ws = new WebSocket(this.url); } catch (e) { if (onFail) onFail(e); else this.schedule(); return; }
+      this.ws = ws;
+      let opened = false;
+      // Clé Groq des Réglages (transcription en ligne la plus rapide) : transmise au seul programme local.
+      ws.onopen = () => {
+        opened = true;
+        const st = getSettings();
+        this.send({ type: 'start', lang: this.s.lang, hint: this.s.hint || '', keys: { groq: st.groqKey || '' } });
+      };
+      ws.onmessage = (e) => {
+        let m = null;
+        try { m = JSON.parse(e.data); } catch (x) { return; }
+        if (!m || !m.type) return;
+        if (onFirst) onFirst(m);
+        this.onMessage(m);
+      };
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        if (this.ws === ws) this.ws = null;
+        if (this.closed) return;
+        if (!opened && onFail) { onFail(new Error('fermé')); return; }
+        if (!this.lost) { this.lost = true; this.ready = false; info('them', 'PC_AUDIO_LOST', 'warn'); }
+        this.schedule();
+      };
+    }
+    schedule() {
+      if (this.closed) return;
+      clearTimeout(this.retry);
+      this.retry = setTimeout(() => this.connect(null, null), 2000);
+    }
+    send(m) { try { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); } catch (e) { /* ignore */ } }
+    onMessage(m) {
+      const s = this.s;
+      const ch = m.who ? s.channel(m.who === 'them' ? 'them' : 'me') : null;
+      switch (m.type) {
+        case 'ready':
+          this.ready = true; this.model = m.model || ''; this.devices = m.devices || {};
+          for (const c of s.channels) {
+            const dev = this.devices[c.role === 'them' ? 'them' : 'me'];
+            if (dev) c.label = dev;
+            if (!c.ended) c.setState(s.paused ? 'paused' : 'listening');
+          }
+          if (s.paused) this.send({ type: 'pause' });
+          if (this.lost) { this.lost = false; info('them', 'PC_AUDIO_BACK', 'info'); }
+          break;
+        case 'level':
+          if (ch && !ch.ended) { const r = +m.rms || 0; ch.onLevel(r, r); }
+          break;
+        case 'speech':
+          if (ch && !ch.ended && !s.paused) ch.onSpeech(!!m.active);
+          break;
+        case 'interim':
+          // Texte en direct de la phrase en cours : permet de reconnaître une question préparée avant la fin.
+          if (ch && !ch.ended && !s.paused && m.text) { ch.interimShown = true; emit('interim', { who: ch.who, text: String(m.text) }); }
+          break;
+        case 'config':
+          this.stt = m.stt || '';
+          if (m.devices) for (const c of s.channels) { const dev = m.devices[c.role]; if (dev) c.label = dev; }
+          break;
+        case 'final': {
+          if (!ch || !m.text) break;
+          if (ch.interimShown) { ch.interimShown = false; emit('interim', { who: ch.who, text: '' }); }
+          const t0 = +m.t0 || now(), t1 = +m.t1 || t0;
+          s.final(ch, String(m.text), t0 - s.t0, { source: 'local', durMs: Math.max(0, t1 - t0), latencyMs: +m.ms || 0 });
+          break;
+        }
+        case 'idle':
+          for (const c of s.channels) if (c.interimShown && !c.speaking) { c.interimShown = false; emit('interim', { who: c.who, text: '' }); }
+          break;
+        case 'drained':
+          if (this.drainWait) { const f = this.drainWait; this.drainWait = null; f(); }
+          break;
+        case 'info':
+          emit('info', { who: m.who || null, code: m.code || 'LOCAL', kind: 'warn', message: String(m.message || m.code || '') });
+          break;
+        default:
+          break;
+      }
+    }
+    /** Fin d'entretien : laisse le programme transcrire les dernières phrases (au plus drainMs). */
+    async drain(drainMs) {
+      if (!this.ws || this.ws.readyState !== 1 || !(drainMs > 0)) return;
+      await withTimeout(new Promise((resolve) => { this.drainWait = resolve; this.send({ type: 'stop' }); }), drainMs).catch(() => {});
+    }
+    close() {
+      this.closed = true;
+      clearTimeout(this.retry);
+      try { if (this.ws) this.ws.close(); } catch (e) { /* ignore */ }
+      this.ws = null;
+    }
+  }
+  class LocalEngine {
+    constructor(ch, link) { this.ch = ch; this.link = link; }
+    start() { if (this.link.ready) this.ch.setState(this.ch.s.paused ? 'paused' : 'listening'); }
+    pause() { this.link.send({ type: 'pause' }); this.ch.setState('paused'); }
+    resume() { this.link.send({ type: 'resume' }); this.ch.setState(this.link.ready ? 'listening' : 'restarting'); }
+    stop() { /* la liaison est fermée par la session, après la vidange */ }
+    idleInterim() { /* le programme envoie « idle » quand il n'a plus rien à transcrire */ }
+  }
+
   function stopStream(stream) {
     if (!stream || typeof stream.getTracks !== 'function') return;
     stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* ignore */ } });
@@ -1317,7 +1564,8 @@ registerProcessor('souffleur-tap', SouffleurTap);
       if (!active) this.lastSpeechEnd = now();
       if (this.role === 'them') this.s.noteThemSpeech(active);
       emit('speech', { who: this.who, active });
-      if (this.engineKind === 'cloud') {
+      // Moteur local : « … » seulement pour le correspondant (le micro peut entendre l'écho, filtré par le programme).
+      if (this.engineKind === 'cloud' || (this.engineKind === 'local' && this.role === 'them')) {
         if (active && !this.interimShown) { this.interimShown = true; emit('interim', { who: this.who, text: '…' }); }
         else if (!active && this.engine) this.engine.idleInterim();
       }
@@ -1451,6 +1699,22 @@ registerProcessor('souffleur-tap', SouffleurTap);
         if (!S.ai || typeof S.ai.transcribe !== 'function') throw audioError('NO_KEY');
         if (typeof S.ai.hasKey === 'function' && !S.ai.hasKey()) throw audioError('NO_KEY');
       }
+      if (cfg.local) {
+        // Tout se passe dans le programme Son du PC : une liaison, deux pistes alimentées par ses messages.
+        const link = new LocalLink(this);
+        await link.open(4000);
+        this.link = link;
+        this.cleanups.push(() => link.close());
+        try {
+          this.checkAlive();
+          if (cfg.them) this.addChannel('them', 'them', cfg.them, 'local', null, {});
+          if (cfg.me) this.addChannel('me', 'me', cfg.me, 'local', null, {});
+          for (const ch of this.channels) { const dev = link.devices[ch.role]; if (dev) ch.label = dev; }
+          this.attachGlobal();
+          for (const ch of this.channels) ch.engine.start();
+        } catch (e) { link.close(); throw e; }
+        return;
+      }
       const usesDevices = cfg.them === 'display' || cfg.them === 'mic' || cfg.me === 'mic';
       if (usesDevices && !nav.mediaDevices) throw audioError(mediaUnavailableCode());
       if (cfg.them && cfg.me && cfg.themEngine === 'webspeech' && cfg.meEngine === 'webspeech') info(null, 'DUAL_WEBSPEECH', 'warn');
@@ -1461,6 +1725,9 @@ registerProcessor('souffleur-tap', SouffleurTap);
       try {
         if (cfg.them === 'display') {
           themStream = await getDisplay({ controller: opts.captureController });
+          acquired.push(themStream);
+        } else if (cfg.them === 'pc') {
+          themStream = await getPcAudio();
           acquired.push(themStream);
         }
         this.checkAlive();
@@ -1506,7 +1773,9 @@ registerProcessor('souffleur-tap', SouffleurTap);
       this.channels.push(ch);
       ch.setState('starting');
       if (stream) ch.attachStream(stream);
-      if (engineKind === 'cloud') {
+      if (engineKind === 'local') {
+        ch.engine = new LocalEngine(ch, this.link);
+      } else if (engineKind === 'cloud') {
         ch.engine = new CloudEngine(ch);
       } else {
         const at = stream ? stream.getAudioTracks()[0] : null;
@@ -1662,6 +1931,8 @@ registerProcessor('souffleur-tap', SouffleurTap);
     themBusy() {
       const th = this.channel('them');
       if (!th || th.ended) return false;
+      // Moteur local : la phrase du correspondant arrive après la fin de sa parole + la transcription (~1-2 s).
+      if (th.engineKind === 'local') return th.speaking || th.interimShown || now() - th.lastSpeechEnd < 1500;
       if (th.engineKind !== 'cloud') return th.speaking;
       return th.speaking || !!(th.engine && th.engine.queue && th.engine.queue.busy) || now() - th.lastSpeechEnd < 1200;
     }
@@ -1711,6 +1982,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
         ch.detachStream(true);
         ch.ended = true;
       }
+      if (this.link) await this.link.drain(drainMs > 0 ? Math.min(6000, drainMs + 3000) : 0);   // dernières phrases du programme local
       this.cleanups.forEach(f => { try { f(); } catch (e) { /* ignore */ } });
       this.cleanups = [];
       if (this.ctx) { const c = this.ctx; this.ctx = null; try { await withTimeout(c.close(), 1500); } catch (e) { /* ignore */ } }
@@ -1787,6 +2059,7 @@ registerProcessor('souffleur-tap', SouffleurTap);
     const out = new Set();
     const add = (w, cond) => { if (w && cond) out.add(w); };
     if (/DISPLAY/.test(code)) add(them, cfg.them === 'display');
+    else if (/^PC_AUDIO/.test(code)) { add(them, cfg.them === 'pc' || cfg.local); add(me, !!cfg.local); }
     else if (/^MIC_/.test(code)) { add(them, cfg.them === 'mic'); add(me, cfg.me === 'mic'); }
     else if (code === 'NO_KEY') { add(them, cfg.themEngine === 'cloud'); add(me, cfg.meEngine === 'cloud'); }
     else if (code === 'NO_WEBSPEECH') { add(them, cfg.themEngine === 'webspeech'); add(me, cfg.meEngine === 'webspeech'); }

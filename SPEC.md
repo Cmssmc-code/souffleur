@@ -145,6 +145,7 @@ S.ai.test() -> [{provider, model, ok, ms, error}]  // ping minimal de chaque fou
 S.audio.support() -> {getUserMedia, getDisplayMedia, displayAudio /* heuristique Chrome/Edge desktop */, webSpeech, audioWorklet, wakeLock, docPiP}
 S.audio.presets -> [
    {id:'visio-casque', label:'Visio sur ce PC (Meet / Teams)', them:'display', themEngine:'cloud', me:'mic', meEngine:'webspeech', needsKey:true},
+   {id:'pc-interne', label:'Appel ou visio sur ce PC (son interne)', them:'pc', themEngine:'local', me:'mic', meEngine:'local', needsKey:false},   // moteur 'local' : tools/son-pc/souffleur_son_pc.py capte le son du PC (boucle WASAPI) et le micro séparément, découpe (Silero) et transcrit (Whisper) sur le PC, puis envoie des phrases attribuées (ws://127.0.0.1:47800/transcription) ; aucune capture ni clé côté page ; programme absent → erreur 'PC_AUDIO_OFF'. Source 'pc' avec un autre moteur : son brut ws://…/son (en-tête JSON {rate} puis PCM s16le mono)
    {id:'haut-parleur', label:'Haut-parleur ou téléphone à côté', them:null, me:'mic', meEngine:'webspeech', mixed:true, needsKey:false},
    {id:'visio-hp', label:'Visio sur ce PC, son sur haut-parleurs (sans clé)', them:null, me:'mic', meEngine:'webspeech', mixed:true, needsKey:false},
    {id:'micro-cloud', label:'Micro seul, transcription IA (bruit, accents)', them:null, me:'mic', meEngine:'cloud', mixed:true, needsKey:true} ]

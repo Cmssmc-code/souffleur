@@ -575,9 +575,13 @@ await test('niveau perceptif 0..1 (échelle dB -60 → 0)', () => {
 });
 
 await test('presets du SPEC + configuration personnalisée', () => {
-  assert.deepEqual(A.presets.map(p => p.id), ['visio-casque', 'haut-parleur', 'visio-hp', 'micro-cloud']);
+  assert.deepEqual(A.presets.map(p => p.id), ['visio-casque', 'pc-interne', 'haut-parleur', 'visio-hp', 'micro-cloud']);
   const c1 = I.resolveConfig('visio-casque');
   assert.deepEqual([c1.them, c1.themEngine, c1.me, c1.meEngine, c1.mixed, c1.needsKey], ['display', 'cloud', 'mic', 'webspeech', false, true]);
+  const cp = I.resolveConfig('pc-interne');
+  assert.deepEqual([cp.them, cp.themEngine, cp.me, cp.meEngine, cp.mixed, cp.needsKey, cp.local], ['pc', 'local', 'mic', 'local', false, false, true]);
+  const cm = I.resolveConfig({ them: 'pc', themEngine: 'local', me: 'mic', meEngine: 'webspeech', mixed: true });
+  assert.deepEqual([cm.themEngine, cm.meEngine, cm.mixed, cm.local], ['local', 'local', false, true], 'moteur local : les deux voix passent par le programme');
   const c2 = I.resolveConfig({ them: 'mic', themEngine: 'cloud' });
   assert.deepEqual([c2.them, c2.themEngine, c2.me, c2.needsKey, c2.id], ['mic', 'cloud', null, true, 'custom']);
   const c3 = I.resolveConfig('micro-cloud');
@@ -602,6 +606,88 @@ await test('support() et start() hors navigateur : objet complet, erreurs codée
   assert.equal(A.running, false);
   assert.equal(A.who, null);
 });
+
+section('Moteur local « Son du PC » (programme simulé)');
+{
+  // Faux programme local : WebSocket simulé qui répond comme tools/son-pc/souffleur_son_pc.py.
+  const sockets = [];
+  class FakeWS {
+    constructor(url) {
+      this.url = url; this.readyState = 0; this.sent = [];
+      sockets.push(this);
+      setTimeout(() => {
+        if (FakeWS.refuse) { this.readyState = 3; if (this.onclose) this.onclose({ code: 1006 }); return; }
+        this.readyState = 1;
+        if (this.onopen) this.onopen();
+        this.recv({ type: 'ready', model: 'base', devices: { them: 'Haut-parleur (boucle)', me: 'Micro intégré' } });
+      }, 5);
+    }
+    send(s) {
+      const m = JSON.parse(s);
+      this.sent.push(m);
+      if (m.type === 'stop') setTimeout(() => { this.recv({ type: 'final', who: 'them', text: 'Dernière question ?', t0: Date.now() - 900, t1: Date.now() - 100, ms: 300 }); this.recv({ type: 'drained' }); }, 20);
+    }
+    recv(m) { if (this.onmessage) this.onmessage({ data: JSON.stringify(m) }); }
+    close() { this.readyState = 3; if (this.onclose) this.onclose({ code: 1000 }); }
+  }
+  const realWS = globalThis.WebSocket;
+  globalThis.WebSocket = FakeWS;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  await test('pc-interne : démarre sans micro ni clé, phrases attribuées, écho ignoré, vidange en fin d\'entretien', async () => {
+    const ev = [];
+    const offs = ['final', 'interim', 'state', 'speech'].map(n => A.on(n, e => ev.push([n, e])));
+    await A.start('pc-interne', { hint: 'Fondation Giacometti' });
+    const ws = sockets[sockets.length - 1];
+    assert.equal(ws.url, 'ws://127.0.0.1:47800/transcription');
+    const start = ws.sent.find(m => m.type === 'start');
+    assert.ok(start && start.lang && start.hint === 'Fondation Giacometti', 'start envoyé avec langue et contexte');
+    const st = A.status();
+    assert.deepEqual(st.channels.map(c => [c.who, c.engine, c.state]), [['them', 'local', 'listening'], ['me', 'local', 'listening']], JSON.stringify(st.channels.map(c => [c.who, c.engine, c.state])));
+    const t = Date.now();
+    ws.recv({ type: 'speech', who: 'them', active: true, t });
+    ws.recv({ type: 'interim', who: 'them', text: 'Pourquoi la culture' });
+    ws.recv({ type: 'speech', who: 'them', active: false, t: t + 2000 });
+    ws.recv({ type: 'final', who: 'them', text: 'Pourquoi la culture, vous qui venez de l\'humanitaire ?', t0: t, t1: t + 2000, ms: 600 });
+    // le micro a entendu les haut-parleurs : même phrase en « me » → doublon ignoré
+    ws.recv({ type: 'final', who: 'me', text: 'pourquoi la culture vous qui venez de l\'humanitaire', t0: t + 100, t1: t + 2000, ms: 500 });
+    await wait(1700);
+    ws.recv({ type: 'final', who: 'me', text: 'J\'ai toujours travaillé pour l\'intérêt général.', t0: t + 6000, t1: t + 8000, ms: 500 });
+    await wait(50);
+    await A.stop(1500);
+    offs.forEach(f => f && f());
+    const finals = ev.filter(([n]) => n === 'final').map(([, e]) => [e.who, e.text, e.source]);
+    assert.deepEqual(finals.map(f => f[0] + ':' + f[1].split(',')[0].split('.')[0]), [
+      'them:Pourquoi la culture', 'me:J\'ai toujours travaillé pour l\'intérêt général', 'them:Dernière question ?'], JSON.stringify(finals));
+    assert.ok(finals.every(f => f[2] === 'local'));
+    assert.ok(ev.some(([n, e]) => n === 'interim' && e.who === 'them' && e.text === 'Pourquoi la culture'), 'texte en direct transmis');
+    assert.ok(!ev.some(([n, e]) => n === 'interim' && e.who === 'me' && e.text === '…'), 'pas de « … » pour le micro');
+    assert.ok(ws.sent.some(m => m.type === 'stop'), 'vidange demandée à l\'arrêt');
+  });
+
+  await test('pc-interne : programme absent → PC_AUDIO_OFF en français, rien ne reste ouvert', async () => {
+    FakeWS.refuse = true;
+    await assert.rejects(() => A.start('pc-interne'), e => e.code === 'PC_AUDIO_OFF' && /Son du PC/.test(e.message));
+    FakeWS.refuse = false;
+    assert.equal(A.running, false);
+  });
+
+  await test('pc-interne : connexion perdue en plein entretien → reconnexion et reprise', async () => {
+    const infos = [];
+    const off = A.on('info', e => infos.push(e.code));
+    await A.start('pc-interne');
+    const n0 = sockets.length;
+    sockets[n0 - 1].close();
+    await wait(2300);
+    assert.ok(sockets.length > n0, 'nouvelle connexion tentée');
+    await wait(50);
+    assert.ok(infos.includes('PC_AUDIO_LOST') && infos.includes('PC_AUDIO_BACK'), infos.join(','));
+    assert.ok(sockets[sockets.length - 1].sent.some(m => m.type === 'start'), 'start renvoyé après reconnexion');
+    await A.stop(0);
+    off && off();
+  });
+  globalThis.WebSocket = realWS;
+}
 
 console.log(`\n${passed} réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

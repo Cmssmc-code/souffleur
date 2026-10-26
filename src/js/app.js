@@ -1663,12 +1663,14 @@
 
   const FALLBACK_PRESETS = [
     { id: 'visio-casque', label: 'Visio sur ce PC (Meet / Teams)', them: 'display', themEngine: 'cloud', me: 'mic', meEngine: 'webspeech', needsKey: true },
+    { id: 'pc-interne', label: 'Appel ou visio sur ce PC (son interne)', them: 'pc', themEngine: 'local', me: 'mic', meEngine: 'local', needsKey: false },
     { id: 'haut-parleur', label: 'Haut-parleur ou téléphone à côté', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false },
     { id: 'visio-hp', label: 'Visio sur ce PC, son sur haut-parleurs', them: null, me: 'mic', meEngine: 'webspeech', mixed: true, needsKey: false },
     { id: 'micro-cloud', label: 'Micro seul, transcription IA (bruit, accents)', them: null, me: 'mic', meEngine: 'cloud', mixed: true, needsKey: true }
   ];
   const PRESET_UI = {
     'visio-casque': { icon: 'video', tag: 'Recommandé', desc: 'Capte le son de l’onglet Meet ou de l’écran Teams, et votre micro à part. Deux voix bien séparées, même au casque.' },
+    'pc-interne': { icon: 'speaker', tag: 'Appels sur le PC', desc: 'Le programme « Son du PC » écoute le son du PC (Lien avec Windows, Teams, Meet) et votre micro séparément, et transcrit sur le PC. Sans clé ni fenêtre de partage.' },
     'haut-parleur': { icon: 'phone', desc: 'Un seul micro entend tout le monde. Gratuit et sans clé : idéal avec un téléphone posé à côté.' },
     'visio-hp': { icon: 'speaker', desc: 'Meet ou Teams sur ce PC, le son sort des haut-parleurs. Gratuit et sans clé.' },
     'micro-cloud': { icon: 'sparkles', desc: 'Transcription par l’IA, plus robuste au bruit et aux accents.' }
@@ -1786,7 +1788,13 @@
     </div>`;
     hydrateIcons(root);
     paintSetupDynamic();
+    // Programme « Son du PC » présent sur ce PC : c'est le mode le plus fiable pour un appel ou une visio sur
+    // le PC ; on le choisit d'office (sauf si l'utilisateur choisit autre chose sur cet écran).
+    if (L.presetId !== 'pc-interne' && presets().some((p) => p.id === 'pc-interne') && /Windows/.test(navigator.userAgent || '')) {
+      if (L.pcProbe === undefined) probePcAudio();
+    }
     $$('[data-preset]', root).forEach((b) => b.addEventListener('click', () => {
+      L.userPicked = true;
       L.presetId = b.dataset.preset;
       rememberPreset(L.presetId);
       $$('[data-preset]', root).forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
@@ -1814,7 +1822,15 @@
     const sup = support();
     const hint = $('[data-b="hint"]', root);
     if (hint) {
-      hint.innerHTML = p.them === 'display' ? `<div class="hint-card">
+      hint.innerHTML = p.them === 'pc' ? `<div class="hint-card">
+          <div class="hint-title">${icon('info')}Tout se passe sur le PC, sans fenêtre de partage</div>
+          <ol class="hint-steps">
+            <li><b>Son du PC</b> tourne en arrière-plan (lancé à l’ouverture de session) : la ligne ci-contre doit être verte.</li>
+            <li>Décrochez l’appel <b>sur le PC</b> (Lien avec Windows, Teams, Meet…), de préférence au <b>casque</b>.</li>
+            <li>La voix du recruteur vient du son du PC, la vôtre du micro : chaque phrase est attribuée à coup sûr.</li>
+          </ol>
+          <p class="small muted">Transcription sur le PC (Whisper), sans clé ni Internet. Tout le son du PC est écouté : activez « Ne pas déranger ».</p>
+        </div>` : p.them === 'display' ? `<div class="hint-card">
           <div class="hint-title">${icon('info')}Au démarrage, Chrome vous demande quoi partager</div>
           <ol class="hint-steps">
             <li><b>Meet</b> dans Chrome : onglet <b>Onglet Chrome</b>, choisissez l’onglet de la réunion.</li>
@@ -1838,6 +1854,15 @@
       `<div class="meter meter-sm" data-b="mic-meter"><i style="--v:0"></i></div><button type="button" class="btn btn-sm" data-act="mictest">${L.meter ? 'Arrêter' : 'Tester'}</button>`);
     if (needDisplay) html += row(sup.getDisplayMedia === false ? 'err' : sup.displayAudio === false ? 'warn' : 'ok', 'video', 'Son de l’onglet ou du système',
       sup.getDisplayMedia === false ? 'Indisponible sur ce navigateur : utilisez Chrome ou Edge sur PC, ou le mode haut-parleur.' : sup.displayAudio === false ? 'Le partage audio risque de ne pas marcher ici (Chrome ou Edge sur PC conseillés).' : 'Partage de l’audio pris en charge');
+    if (p.them === 'pc') {
+      if (L.pcProbe === undefined) probePcAudio();
+      const st = L.pcProbe;
+      html += row(st === 'ok' ? 'ok' : st === 'off' ? 'err' : 'pending', 'speaker', 'Son du PC (interne)',
+        st === 'ok' ? 'Prêt' + (L.pcDevice ? ' · ' + esc(L.pcDevice) : '')
+          : st === 'off' ? 'Programme « Son du PC » non lancé : double-cliquez sur « Son du PC Souffleur ».'
+            : st === 'loading' ? 'Chargement du modèle de transcription (quelques secondes)…' : 'Recherche du programme « Son du PC »…',
+        st === 'off' ? '<button type="button" class="btn btn-sm" data-act="pcprobe">Réessayer</button>' : '');
+    }
     if (needSpeech) html += row(sup.webSpeech === false ? 'warn' : 'ok', 'waveform', 'Reconnaissance vocale',
       sup.webSpeech === false ? 'Indisponible ici : utilisez Chrome, ou le mode « transcription IA ».' : 'Reconnaissance vocale de Chrome');
     html += row(key ? 'ok' : p.needsKey ? 'err' : 'warn', 'key', 'Clé IA', key ? 'Réponses IA en direct activées' : p.needsKey ? 'Ce mode nécessite une clé : ajoutez-la dans les Réglages.' : 'Sans clé : seules vos réponses préparées s’afficheront.');
@@ -1846,8 +1871,50 @@
     checks.innerHTML = html;
     const mt = $('[data-act="mictest"]', checks);
     if (mt) mt.addEventListener('click', () => { if (L.meter) { stopMeter(); paintSetupDynamic(); } else startMeter(); });
+    const pb = $('[data-act="pcprobe"]', checks);
+    if (pb) pb.addEventListener('click', () => { L.pcProbe = undefined; paintSetupDynamic(); });
     const sb = $('[data-act="start"]', root);
     if (sb) sb.disabled = !!(p.needsKey && !key);
+  }
+
+  /** Le programme local « Son du PC » est-il prêt ? (« ready » reçu ; la connexion préchauffe aussi le modèle) */
+  function probePcAudio() {
+    if (!L) return;
+    const l = L;
+    l.pcProbe = 'pending';
+    let ws = null, done = false, timer = null;
+    const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => end('off'), ms); };
+    const end = (st, detail) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { if (ws) ws.close(); } catch (e) { /* rien */ }
+      if (L !== l) return;
+      l.pcProbe = st;
+      if (detail) l.pcDevice = detail;
+      if (st === 'ok' && !l.userPicked && !l.running && l.presetId !== 'pc-interne') {
+        l.presetId = 'pc-interne';
+        rememberPreset('pc-interne');
+        $$('[data-preset]', l.root).forEach((x) => { const on = x.dataset.preset === 'pc-interne'; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
+      }
+      paintSetupDynamic();
+    };
+    arm(2500);
+    try { ws = new WebSocket('ws://127.0.0.1:47800/transcription'); } catch (e) { end('off'); return; }
+    ws.onmessage = (e) => {
+      let m = null;
+      try { m = JSON.parse(e.data); } catch (x) { return; }
+      if (!m) return;
+      if (m.type === 'info' && m.code === 'MODEL_LOADING' && l.pcProbe !== 'loading') {
+        arm(90000);
+        if (L === l) { l.pcProbe = 'loading'; paintSetupDynamic(); }
+      } else if (m.type === 'ready') {
+        const d = m.devices || {};
+        end('ok', [m.model && 'modèle ' + m.model, d.them && 'son : ' + d.them, d.me && 'micro : ' + d.me].filter(Boolean).join(' · '));
+      }
+    };
+    ws.onerror = () => end('off');
+    ws.onclose = () => end('off');
   }
 
   async function startMeter() {

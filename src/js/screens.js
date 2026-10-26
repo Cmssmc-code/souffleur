@@ -253,12 +253,14 @@
 
   const PRESET_FALLBACK = [
     { id: 'visio-casque', label: 'Visio sur ce PC (Meet / Teams)', needsKey: true },
+    { id: 'pc-interne', label: 'Appel ou visio sur ce PC (son interne)', needsKey: false },
     { id: 'haut-parleur', label: 'Haut-parleur ou téléphone à côté', needsKey: false },
     { id: 'visio-hp', label: 'Visio sur ce PC, son sur haut-parleurs', needsKey: false },
     { id: 'micro-cloud', label: 'Micro seul, transcription IA (bruit, accents)', needsKey: true }
   ];
   const PRESET_INFO = {
     'visio-casque': { icon: 'video', desc: 'Le son de Meet ou Teams est capté directement : le recruteur et vous êtes séparés. Idéal avec un casque.' },
+    'pc-interne': { icon: 'speaker', desc: 'Appel décroché sur le PC (Lien avec Windows, Teams, Meet) : « Son du PC » écoute le PC et votre micro séparément et transcrit sur le PC, sans clé.' },
     'haut-parleur': { icon: 'phone', desc: 'Un seul micro entend tout le monde (téléphone en haut-parleur posé à côté). 100 % gratuit.' },
     'visio-hp': { icon: 'speaker', desc: 'Visio sur ce PC avec le son sur les haut-parleurs : transcription gratuite par Chrome.' },
     'micro-cloud': { icon: 'waveform', desc: 'Transcription par l’IA, plus robuste au bruit et aux accents.' }
