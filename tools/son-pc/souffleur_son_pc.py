@@ -239,6 +239,8 @@ class Segmenter:
         self.last_voice = 0.0
         self.run = 0
         self.voiced = deque()                  # instants (ms) des images parlées, 60 s (anti-écho)
+        self.quiet = False                     # « s'est tu » déjà annoncé (anticipé), phrase pas encore close
+        self.finalized = False                 # phrase déjà envoyée comme finale (anticipée), pas encore close
         self.rms_acc, self.rms_n = 0.0, 0
 
     def push(self, x, t_end):
@@ -271,6 +273,15 @@ class Segmenter:
                 self.cur.append(f)
                 if p >= 0.35:
                     self.last_voice = t
+                if p >= 0.5 and self.quiet:                        # reprise après un « s'est tu » anticipé
+                    self.quiet = False
+                    if self.finalized:
+                        # La première partie est déjà partie comme phrase finale : la suite est une nouvelle
+                        # phrase (avec ~320 ms d'avant), sans retranscrire ni renvoyer le début.
+                        self.finalized = False
+                        self.cur = self.cur[-10:]
+                        self.t0 = t - 32.0 * len(self.cur)
+                    self.on_speech(self.who, True, t)
                 if len(self.cur) * 32 >= 15000:                    # phrase trop longue : on coupe, on continue
                     self.close(t, keep_going=True)
                 elif t - self.last_voice >= self.hang_ms:
@@ -289,7 +300,10 @@ class Segmenter:
         else:
             self.cur = None
             self.run = 0
-            self.on_speech(self.who, False, t)
+            if not self.quiet:
+                self.on_speech(self.who, False, t)
+            self.quiet = False
+            self.finalized = False
         if audio.size >= SR * 0.3:
             self.on_segment(self.who, audio, t0, t1)
 
@@ -388,13 +402,21 @@ class Transcriber:
         self.busy = False
         self.interim_pending = False
         self.on_interim = None                 # rappel du moteur : (who, t0, nb d'échantillons, texte, ms, modèle)
+        # Texte en direct : moteur Whisper à part (son propre fil et ses propres cœurs) ; la phrase finale
+        # n'attend jamais derrière lui. Une seule demande : la plus récente remplace la précédente.
+        self.live_model = None
+        self.live_job = None
+        self.live_cv = threading.Condition()
         threading.Thread(target=self._load, name="modeles", daemon=True).start()
         threading.Thread(target=self._run, name="whisper", daemon=True).start()
+        threading.Thread(target=self._run_live, name="whisper-direct", daemon=True).start()
 
-    def _model(self, name):
+    def _model(self, name, threads=None):
         from faster_whisper import WhisperModel
         t = time.time()
-        m = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=max(2, min(8, (os.cpu_count() or 4) - 4)))
+        cpus = os.cpu_count() or 4
+        m = WhisperModel(name, device="cpu", compute_type="int8",
+                         cpu_threads=threads or max(2, min(8, cpus - 4)))
         log.info("modèle %s chargé en %.1f s", name, time.time() - t)
         return m
 
@@ -413,6 +435,36 @@ class Transcriber:
         except Exception:
             log.exception("chargement du modèle %s", first)
             self.emit({"type": "info", "code": "MODEL_FAILED", "message": f"Modèle Whisper « {first} » introuvable."})
+            return
+        # Moteur séparé pour le texte en direct seulement sur un gros processeur : mesuré sur un portable
+        # 12 fils, il prenait le processeur pile pendant la phrase finale (0,6 s → 1,7 s). Sinon, le texte en
+        # direct passe par le fil principal, uniquement quand il est libre.
+        if (os.cpu_count() or 4) < 16:
+            return
+        try:
+            live = self._model("base", threads=4)
+            list(live.transcribe(np.zeros(SR, dtype=np.float32), language=self.lang, beam_size=1, without_timestamps=True)[0])
+            self.live_model = live
+        except Exception:
+            log.exception("moteur du texte en direct (on s'en passe)")
+
+    def _run_live(self):
+        while True:
+            with self.live_cv:
+                while self.live_job is None or self.live_model is None:
+                    self.live_cv.wait(0.5)
+                who, audio, t0 = self.live_job
+                self.live_job = None
+            try:
+                start = time.time()
+                segs, _ = self.live_model.transcribe(
+                    audio, language=self.lang, beam_size=1, vad_filter=False, without_timestamps=True,
+                    condition_on_previous_text=False, initial_prompt=self.hint or None, temperature=0.0)
+                text = " ".join(s.text.strip() for s in segs if s.text.strip() and not HALLUCINATIONS.search(s.text)).strip()
+                if self.on_interim:
+                    self.on_interim(who, t0, -1, text, round((time.time() - start) * 1000), "base·direct")
+            except Exception:
+                log.exception("texte en direct")
 
     def ready(self):
         return bool(self.models)
@@ -436,10 +488,17 @@ class Transcriber:
         ``early`` : le correspondant vient de se taire ; cette transcription servira sans doute de phrase finale
         (moteur : ``on_interim``), elle passe donc avant vos phrases et n'est jamais abandonnée.
         """
+        if not early:
+            if self.live_model is not None:                   # moteur du texte en direct : jamais en concurrence
+                with self.live_cv:
+                    self.live_job = (who, audio, t0)
+                    self.live_cv.notify()
+                return True
+            with self.cv:                                     # repli : même fil, seulement s'il est libre
+                if not self.models or self.interim_pending or self.q or self.busy:
+                    return False
         with self.cv:
             if not self.models or (self.interim_pending and not early):
-                return False
-            if not early and (self.q or self.busy):
                 return False
             self.interim_pending = True
             n = audio.size
@@ -551,7 +610,8 @@ class Engine:
         self.early_lock = threading.Lock()
         self.early_mark = None                 # (début de phrase, dernière parole) déjà soumis en anticipé
         self.early_inflight = None             # (début de phrase, nb d'échantillons) en cours de transcription
-        self.early_done = {}                   # début de phrase → (nb d'échantillons, texte, ms, modèle)
+        self.ready = None                      # (début, nb d'échantillons, dernière parole, texte, ms, modèle)
+        self.early_sent = set()                # débuts de phrases déjà envoyées en anticipé
         self.waiting = {}                      # phrases finies qui attendent leur transcription anticipée
         self.seg = {"them": Segmenter("them", self.on_speech, self.on_segment, 700),
                     "me": Segmenter("me", self.on_speech, self.on_segment, 800)}
@@ -635,7 +695,10 @@ class Engine:
                 if t - th.last_voice >= 250 and self.early_mark != mark and len(th.cur) <= 470:
                     if self.tr.add_interim("them", np.concatenate(th.cur), th.t0, early=True):
                         self.early_mark = mark
-                        self.early_inflight = (th.t0, len(th.cur) * VAD_FRAME)
+                        self.early_inflight = (th.t0, len(th.cur) * VAD_FRAME, th.last_voice)
+                        if not th.quiet:                    # la page sait tout de suite que le recruteur s'est tu
+                            th.quiet = True
+                            self.on_speech("them", False, t)
                 # Texte en direct de la phrase en cours (toutes les ~0,8 s, dès 0,8 s de parole).
                 elif len(th.cur) * 32 >= 800 and t - last_interim >= 800 and t - th.last_voice < 250:
                     if self.tr.add_interim("them", np.concatenate(th.cur[-470:]), th.t0):   # 15 s au plus
@@ -659,10 +722,14 @@ class Engine:
             return
         need = int((t1 - t0) * SR / 1000) - 2 * VAD_FRAME          # échantillons parlés de la phrase
         with self.early_lock:
-            got = self.early_done.get(t0)
-            if got and got[0] >= need:                                 # déjà transcrite pendant le silence
-                self.early_done.pop(t0, None)
-                self._emit_final("them", got[1], t0, t1, got[2], got[3] + "·anticipé")
+            self.early_sent = {x for x in self.early_sent if x > t0 - 300000}
+            if t0 in self.early_sent:                                  # déjà envoyée dès 0,45 s de silence
+                self.early_sent.discard(t0)
+                return
+            got = self.ready
+            if got and got[0] == t0 and got[1] >= need:                # déjà transcrite pendant le silence
+                self.ready = None
+                self._emit_final("them", got[3], t0, t1, got[4], got[5] + "·anticipé")
                 return
             if self.early_inflight and self.early_inflight[0] == t0 and self.early_inflight[1] >= need:
                 self.waiting[t0] = (audio, t1, now_ms())               # transcription anticipée en cours : on l'attend
@@ -670,22 +737,40 @@ class Engine:
         self.tr.add(who, audio, t0, t1)
 
     def _on_interim(self, who, t0, n, text, ms, model):
-        """Résultat d'une transcription « en direct » ou « anticipée » du correspondant."""
+        """Résultat d'une transcription « en direct » (n = -1) ou « anticipée » du correspondant."""
+        seg = self.seg.get(who)
+        if n == -1 and (seg is None or seg.cur is None or seg.t0 != t0 or seg.quiet):
+            return            # phrase déjà terminée ou recruteur déjà tu : ce texte en direct est périmé
         if text and not self.paused:
             self.emit({"type": "interim", "who": who, "text": text, "t0": round(t0)})
         with self.early_lock:
             if self.early_inflight and self.early_inflight[0] == t0 and self.early_inflight[1] == n:
+                lv = self.early_inflight[2]
                 self.early_inflight = None
                 w = self.waiting.pop(t0, None)
                 if w is not None:                                       # la phrase s'est terminée entre-temps
                     if text:
                         self._emit_final(who, text, t0, w[1], ms, model + "·anticipé")
                     return
-                self.early_done = {t0: (n, text, ms, model)}
+                # Phrase encore ouverte : la boucle l'envoie dès 0,45 s de silence (si personne ne reparle).
+                self.ready = (t0, n, lv, text, ms, model)
+
+    QUIET_FINAL_MS = 450      # silence après lequel la phrase anticipée part comme phrase finale
 
     def _check_waiting(self, t):
-        """Filet de sécurité : une phrase qui attend une transcription anticipée depuis plus de 4 s est retranscrite."""
+        """Phrase anticipée prête + 0,45 s de silence → envoyée tout de suite ; filet de sécurité des attentes."""
+        th = self.seg["them"]
         with self.early_lock:
+            r = self.ready
+            if r is not None:
+                if th.cur is None or th.t0 != r[0] or th.last_voice != r[2]:
+                    if th.cur is not None:
+                        self.ready = None              # il a reparlé : le résultat anticipé ne couvre plus la phrase
+                elif t - r[2] >= self.QUIET_FINAL_MS:
+                    self.ready = None
+                    self.early_sent.add(r[0])
+                    th.finalized = True                # s'il reprend, la suite sera une nouvelle phrase
+                    self._emit_final("them", r[3], r[0], r[2] + 200, r[4], r[5] + "·anticipé")
             late = [k for k, w in self.waiting.items() if t - w[2] > 4000]
             for k in late:
                 audio, t1, _ = self.waiting.pop(k)
@@ -716,6 +801,116 @@ class Engine:
             c.close()
 
 
+# ------------------------------------------------------------------------------------------- mode entretien
+# Au « start » d'un entretien, le PC est réservé à l'appel : ce programme passe en priorité haute, ferme les
+# programmes lourds connus (émulateur Android…) et met les autres gros consommateurs en priorité minimale ;
+# tout est rétabli à la fin (sauf les programmes fermés). Réglable dans %LOCALAPPDATA%\Souffleur\son-pc.json :
+# {"mode_entretien": true, "fermer": ["qemu-system-x86_64-headless.exe", …], "ralentir": true}
+BOOST_FILE = LOG_DIR / "son-pc.json"
+BOOST_CLOSE = ["qemu-system-x86_64-headless.exe", "qemu-system-x86_64.exe", "qemu-system-aarch64.exe",
+               "qemu-system-i386.exe", "emulator.exe"]
+# Jamais touchés : l'appel (Chrome/Edge, Lien avec Windows, Teams, Zoom…), l'audio et le cœur de Windows.
+PROTECT = {"chrome.exe", "msedge.exe", "msedgewebview2.exe", "phoneexperiencehost.exe", "crossdeviceservice.exe",
+           "crossdeviceresume.exe", "yourphone.exe", "yourphoneserver.exe", "audiodg.exe", "svchost.exe",
+           "system", "registry", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe",
+           "dwm.exe", "explorer.exe", "ms-teams.exe", "teams.exe", "zoom.exe", "webexmta.exe", "ciscocollabhost.exe",
+           "whatsapp.exe", "whatsapp.root.exe", "searchhost.exe", "startmenuexperiencehost.exe", "textinputhost.exe",
+           "shellexperiencehost.exe", "ctfmon.exe", "fontdrvhost.exe", "memory compression", "secure system"}
+
+
+def boost_settings():
+    cfg = {"mode_entretien": True, "fermer": BOOST_CLOSE, "ralentir": True}
+    try:
+        cfg.update(json.loads(BOOST_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+    return cfg
+
+
+class Boost:
+    def __init__(self):
+        self.lowered = {}                      # pid → priorité d'origine
+        self.active = False
+
+    def _protected(self, p, me):
+        try:
+            name = (p.name() or "").lower()
+            if p.pid in me or name in PROTECT:
+                return True
+            if name in ("python.exe", "pythonw.exe"):
+                cmd = " ".join(p.cmdline()).lower()
+                return "phone-hub" in cmd or "souffleur" in cmd   # Phone Hub et ce programme
+            return False
+        except Exception:
+            return True
+
+    def start(self):
+        cfg = boost_settings()
+        if self.active or not cfg.get("mode_entretien", True):
+            return
+        self.active = True
+        try:
+            import psutil
+        except ImportError:
+            log.warning("mode entretien : psutil absent, rien n'est optimisé")
+            return
+        me = {os.getpid()}
+        try:
+            psutil.Process().nice(psutil.HIGH_PRIORITY_CLASS)
+        except Exception:
+            log.exception("priorité haute impossible")
+        close = {n.lower() for n in cfg.get("fermer") or []}
+        procs = list(psutil.process_iter(["name"]))
+        for p in procs:
+            try:
+                if (p.info["name"] or "").lower() in close and not self._protected(p, me):
+                    p.kill()
+                    log.info("mode entretien : fermé %s (pid %d)", p.info["name"], p.pid)
+            except Exception:
+                pass
+        if not cfg.get("ralentir", True):
+            return
+        for p in procs:                                   # mesure du processeur sur ~1 s
+            try:
+                p.cpu_percent(None)
+            except Exception:
+                pass
+        time.sleep(1.0)
+        for p in procs:
+            try:
+                if p.cpu_percent(None) < 5 or self._protected(p, me):
+                    continue
+                prev = p.nice()
+                if prev in (psutil.IDLE_PRIORITY_CLASS,):
+                    continue
+                p.nice(psutil.IDLE_PRIORITY_CLASS)
+                self.lowered[p.pid] = prev
+                log.info("mode entretien : priorité minimale pour %s (pid %d)", p.info["name"], p.pid)
+            except Exception:
+                pass
+
+    def stop(self):
+        if not self.active:
+            return
+        self.active = False
+        try:
+            import psutil
+        except ImportError:
+            return
+        for pid, prev in self.lowered.items():
+            try:
+                psutil.Process(pid).nice(prev)
+            except Exception:
+                pass
+        if self.lowered:
+            log.info("mode entretien terminé : %d priorité(s) rétablie(s)", len(self.lowered))
+        self.lowered.clear()
+        try:
+            psutil.Process().nice(psutil.NORMAL_PRIORITY_CLASS)
+        except Exception:
+            pass
+
+
 # ------------------------------------------------------------------------------------------------ serveur
 class Hub:
     def __init__(self):
@@ -724,6 +919,7 @@ class Hub:
         self.engine = None
         self.loop = None
         self.close_timer = None
+        self.boost = Boost()
 
     def broadcast(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
@@ -758,6 +954,7 @@ class Hub:
                     self.engine.configure(m.get("lang"), m.get("hint"), m.get("keys"))
                     await asyncio.get_running_loop().run_in_executor(None, self.engine.open_captures)
                     self.engine.paused = False
+                    asyncio.get_running_loop().run_in_executor(None, self.boost.start)   # en fond : ~1 s
                     await ws.send(json.dumps({"type": "config", "stt": self.engine.status(),
                                               "devices": self.engine.devices()}, ensure_ascii=False))
                 elif kind == "pause":
@@ -783,6 +980,7 @@ class Hub:
                 self.cancel_close()
                 self.close_timer = asyncio.get_running_loop().call_later(
                     20, lambda: None if self.started else self.engine.close_captures())
+                self.boost.stop()
 
     def cancel_close(self):
         if self.close_timer is not None:

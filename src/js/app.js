@@ -2534,6 +2534,8 @@
     addTranscript(who, text);
     // Fin d'entretien : on garde les derniers passages (transcription, récap) sans lancer de réponse.
     if (L.paused || L.draining) return;
+    // Le candidat a parlé : la question précédente est close (pas de « reprise » de sa réponse).
+    if (who === 'me') L.lastAutoQ = '';
     // Le candidat a répondu : on ne garde en attente que les vraies questions du recruteur.
     if (who === 'me' && L.pendingThem.length) {
       L.pendingThem = L.pendingThem.filter((x) => isQuestion(x.text));
@@ -2636,7 +2638,10 @@
   }
 
   /* ---------- Déclenchement automatique ---------- */
-  const answerDelay = () => clamp(Number(settings().answerDelayMs) || 900, 200, 5000);
+  // Moteur local « Son du PC » : il n'envoie la phrase finale qu'après avoir lui-même vérifié le silence du
+  // recruteur ; attendre encore le « délai de silence » ne ferait que retarder la réponse.
+  const localEngine = () => { try { return !!(S.audio && S.audio.config && S.audio.config.local); } catch (e) { return false; } };
+  const answerDelay = () => (localEngine() ? 150 : clamp(Number(settings().answerDelayMs) || 900, 200, 5000));
   function armAuto() {
     clearTimeout(L.autoTimer);
     L.autoTimer = setTimeout(checkAuto, answerDelay());
@@ -2654,15 +2659,24 @@
       L.autoTimer = setTimeout(checkAuto, Math.max(150, delay - quiet));
       return;
     }
-    // Au plus un appel IA automatique toutes les 4 s (Espace force toujours une réponse).
+    // Au plus un appel IA automatique toutes les 4 s (Espace force toujours une réponse)… sauf si le
+    // recruteur vient de compléter la question à laquelle on a répondu (pause au milieu de sa phrase) :
+    // on répond tout de suite à la question entière.
     const since = Date.now() - (L.lastAutoAt || 0);
-    if (since < AUTO_MIN_GAP) { L.autoTimer = setTimeout(checkAuto, AUTO_MIN_GAP - since + 20); return; }
-    const q = takePending();
+    let q;
+    if (since < AUTO_MIN_GAP) {
+      const now = Date.now();
+      const fresh = L.pendingThem.filter((x) => now - x.at < 30000).slice(-4).map((x) => x.text).join(' ').trim();
+      if (fresh && worthAnswering(fresh)) q = takePending();                       // nouvelle question : tout de suite
+      else if (fresh && L.lastAutoQ) { takePending(); q = (L.lastAutoQ + ' ' + fresh).trim(); }   // fin d'une phrase coupée
+      else { L.autoTimer = setTimeout(checkAuto, AUTO_MIN_GAP - since + 20); return; }
+    } else q = takePending();
     if (!q) return;
     // Une phrase sans question (présentation de l'entreprise, « Prenez votre temps ») reste un simple
     // contexte : la transcription complète est de toute façon envoyée avec la prochaine question.
     if (!worthAnswering(q)) return;
     L.lastAutoAt = Date.now();
+    L.lastAutoQ = since < AUTO_MIN_GAP ? '' : q;      // une seule reprise par question
     answerQuestion(q, 'auto');
   }
   const AUTO_MIN_GAP = 4000;
