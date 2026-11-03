@@ -6,12 +6,16 @@
   const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
   const CLAUDE_API = 'https://api.anthropic.com/v1';
   const GROQ_API = 'https://api.groq.com/openai/v1';
+  const OPENAI_API = 'https://api.openai.com/v1';
   const CLAUDE_VERSION = '2023-06-01';
   const CACHE_KEY = 'souffleur.models';
-  const PROVIDERS = ['gemini', 'claude', 'groq'];
-  const LABEL = { gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
+  const PROVIDERS = ['openai', 'gemini', 'claude', 'groq'];
+  const LABEL = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
+  // OpenAI : les modèles les plus rapides mesurés (gpt-5.4-mini sans raisonnement : 1er mot ≈ 0,5 s, réponse ≈ 1 s).
+  const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];   // génération 5 minimum
   const FALLBACK = {
+    openai: OPENAI_PREF.slice(0, 3),
     gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash-preview', 'gemini-flash-latest',
       'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
@@ -37,7 +41,7 @@
   const breaker = new Map();     // "provider:model" -> {until, code}
   const noThinking = new Set();  // modèles qui refusent thinkingConfig
   const deadKeys = {};           // provider -> empreinte de la clé refusée (401/403)
-  const lastDiscoverTry = { gemini: 0, claude: 0, groq: 0 };
+  const lastDiscoverTry = { openai: 0, gemini: 0, claude: 0, groq: 0 };
   let lastOk = null;
   let discovering = null;
 
@@ -55,7 +59,7 @@
 
   function keyOf(p) {
     const s = settings();
-    const k = p === 'gemini' ? s.geminiKey : p === 'claude' ? s.claudeKey : p === 'groq' ? s.groqKey : '';
+    const k = p === 'openai' ? s.openaiKey : p === 'gemini' ? s.geminiKey : p === 'claude' ? s.claudeKey : p === 'groq' ? s.groqKey : '';
     return typeof k === 'string' ? k.trim() : '';
   }
 
@@ -356,6 +360,13 @@
     return (ids || []).map(groqInfo).filter(Boolean).sort((a, b) => b.score - a.score).map(i => i.id).slice(0, 3);
   }
 
+  // OpenAI : liste fixe des modèles rapides, dans l'ordre de vitesse mesurée, limitée à ceux que la clé voit.
+  function rankOpenai(ids) {
+    const have = new Set(ids || []);
+    const list = OPENAI_PREF.filter(m => have.has(m));
+    return (list.length ? list : FALLBACK.openai).slice(0, 3);
+  }
+
   function bestPerVersion(infos, scoreFn) {
     const by = {};
     infos.forEach(i => {
@@ -387,6 +398,7 @@
 
   function usable(p, ids) {
     if (p === 'groq') return rankGroq(ids);
+    if (p === 'openai') return rankOpenai(ids);
     if (p === 'gemini') {
       return (ids || []).map(geminiInfo).filter(Boolean)
         .sort((a, b) => (a.tier === b.tier ? b.score - a.score : ['flash', 'lite', 'pro'].indexOf(a.tier) - ['flash', 'lite', 'pro'].indexOf(b.tier)))
@@ -406,9 +418,10 @@
 
   function providerOrder(s) {
     const pref = (s || settings()).provider;
-    if (pref === 'claude') return ['claude', 'gemini', 'groq'];
-    if (pref === 'groq') return ['groq', 'gemini', 'claude'];
-    return ['gemini', 'claude', 'groq'];
+    if (pref === 'claude') return ['claude', 'openai', 'gemini', 'groq'];
+    if (pref === 'groq') return ['groq', 'openai', 'gemini', 'claude'];
+    if (pref === 'gemini') return ['gemini', 'openai', 'claude', 'groq'];
+    return ['openai', 'gemini', 'claude', 'groq'];
   }
 
   function settingPurpose(purpose) {
@@ -417,11 +430,11 @@
 
   function parseModelRef(ref) {
     if (!ref) return null;
-    const provOf = (m) => /^claude/.test(m) ? 'claude' : /^gemini|^models\//.test(m) ? 'gemini' : 'groq';
+    const provOf = (m) => /^claude/.test(m) ? 'claude' : /^gemini|^models\//.test(m) ? 'gemini' : /^(gpt-|o\d|chatgpt)/.test(m) ? 'openai' : 'groq';
     if (typeof ref === 'object' && ref.model) return { provider: ref.provider || provOf(ref.model), model: ref.model };
     const s = String(ref).trim();
     if (!s || s === 'auto') return null;
-    const m = s.match(/^(gemini|claude|groq):(.+)$/);
+    const m = s.match(/^(openai|gemini|claude|groq):(.+)$/);
     if (m) return { provider: m[1], model: m[2] };
     return { provider: provOf(s), model: s.replace(/^models\//, '') };
   }
@@ -432,7 +445,7 @@
     let list = [];
     provs.forEach(p => {
       const ids = modelsFor(p);
-      (p === 'gemini' ? rankGemini(ids, purpose) : p === 'claude' ? rankClaude(ids, purpose) : rankGroq(ids)).forEach(m => list.push({ provider: p, model: m }));
+      (p === 'openai' ? rankOpenai(ids) : p === 'gemini' ? rankGemini(ids, purpose) : p === 'claude' ? rankClaude(ids, purpose) : rankGroq(ids)).forEach(m => list.push({ provider: p, model: m }));
     });
     const pref = parseModelRef(s.models && s.models[settingPurpose(purpose)]);
     if (pref && (!keysOnly || keyOf(pref.provider))) {
@@ -470,7 +483,7 @@
 
   function supportsParts(provider, parts) {
     if (provider === 'gemini') return true;
-    if (provider === 'groq') return (parts || []).every(p => p && typeof p.text === 'string');
+    if (provider === 'groq' || provider === 'openai') return (parts || []).every(p => p && typeof p.text === 'string');
     return (parts || []).every(p => p && (typeof p.text === 'string' || claudeMediaOk(partMime(p))));
   }
 
@@ -539,6 +552,16 @@
     } finally { att.done(); }
   }
 
+  async function listOpenai(key) {
+    const att = makeAttempt(null, 'openai', 'models', false);
+    att.arm(config.discoverTimeoutMs, false);
+    try {
+      const res = await doFetch(OPENAI_API + '/models', { method: 'GET', headers: { Authorization: 'Bearer ' + key } }, att);
+      const j = await readJSON(res, att);
+      return (j.data || []).filter(m => m && m.id).map(m => String(m.id));
+    } finally { att.done(); }
+  }
+
   async function listClaude(key) {
     const ids = [];
     let after = '';
@@ -562,7 +585,7 @@
     if (discovering && !opts.force) return discovering;
     const run = (async () => {
       const cache = readCache();
-      const out = { gemini: [], claude: [], groq: [] };
+      const out = { openai: [], gemini: [], claude: [], groq: [] };
       for (const p of PROVIDERS) {
         const k = keyOf(p);
         if (!k) continue;
@@ -572,7 +595,7 @@
         if (fresh && !opts.force) { out[p] = c.ids; continue; }
         lastDiscoverTry[p] = Date.now();
         try {
-          const ids = usable(p, p === 'gemini' ? await listGemini(k) : p === 'claude' ? await listClaude(k) : await listGroq(k));
+          const ids = usable(p, p === 'openai' ? await listOpenai(k) : p === 'gemini' ? await listGemini(k) : p === 'claude' ? await listClaude(k) : await listGroq(k));
           if (ids.length) cache[p] = { at: Date.now(), fp, ids };
           out[p] = ids.length ? ids : (c && c.fp === fp && c.ids) || [];
         } catch (e) {
@@ -759,7 +782,7 @@
 
   /* ---------------------------------------------------------------- Groq */
 
-  function groqBody(model, o, v) {
+  function groqBody(model, o, v, provider) {
     let system = o.system ? String(o.system) : '';
     if (o.json) system += (system ? '\n\n' : '') + JSON_ONLY;
     const messages = [];
@@ -769,8 +792,13 @@
     });
     const text = (o.parts || []).filter(p => p && typeof p.text === 'string').map(p => p.text).concat(o.prompt ? [String(o.prompt)] : []).join('\n\n');
     messages.push({ role: 'user', content: text || '…' });
-    const body = { model, messages, max_tokens: v.maxTokens || o.maxTokens || 1024 };
-    if (typeof o.temperature === 'number' && !v.noTemperature) body.temperature = Math.max(0, Math.min(1, o.temperature));
+    const openai = provider === 'openai';
+    const gpt5 = openai && /^gpt-5/.test(model);
+    const body = { model, messages };
+    body[openai ? 'max_completion_tokens' : 'max_tokens'] = v.maxTokens || o.maxTokens || 1024;
+    // GPT-5.x : réponse directe sans raisonnement (vitesse) ; pas de température (refusée par ces modèles).
+    if (gpt5 && !v.noReasoning) body.reasoning_effort = /^gpt-5(-|$)/.test(model) ? 'minimal' : 'none';
+    if (typeof o.temperature === 'number' && !v.noTemperature && !gpt5) body.temperature = Math.max(0, Math.min(1, o.temperature));
     if (o.json && !v.noJsonMode) body.response_format = { type: 'json_object' };
     // GPT-OSS raisonne avant d'écrire : raisonnement court et caché pour garder la vitesse.
     if (/gpt-oss/.test(model) && !v.noReasoning) { body.reasoning_effort = 'low'; body.include_reasoning = false; }
@@ -778,11 +806,13 @@
     return body;
   }
 
-  async function groqRequest(model, o, v, att) {
-    const res = await doFetch(GROQ_API + '/chat/completions', {
+  // Groq et OpenAI partagent le même format (chat/completions, SSE).
+  async function groqRequest(model, o, v, att, provider) {
+    provider = provider || 'groq';
+    const res = await doFetch((provider === 'openai' ? OPENAI_API : GROQ_API) + '/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keyOf('groq') },
-      body: JSON.stringify(groqBody(model, o, v))
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keyOf(provider) },
+      body: JSON.stringify(groqBody(model, o, v, provider))
     }, att);
     let full = '';
     let finish = null;
@@ -791,7 +821,7 @@
         if (!d || d === '[DONE]') return;
         let j;
         try { j = JSON.parse(d); } catch (e) { return; }
-        if (j.error) throw httpError('groq', model, Number(j.error.code) || 500, JSON.stringify(j));
+        if (j.error) throw httpError(provider, model, Number(j.error.code) || 500, JSON.stringify(j));
         const c = j.choices && j.choices[0];
         if (!c) return;
         if (c.finish_reason) finish = c.finish_reason;
@@ -804,7 +834,7 @@
       full = (c && c.message && c.message.content) || '';
       finish = (c && c.finish_reason) || null;
     }
-    if (!full.trim() && !o.allowEmpty) throw aiError('EMPTY', frMessage('EMPTY', 'groq'), { provider: 'groq', model, finish });
+    if (!full.trim() && !o.allowEmpty) throw aiError('EMPTY', frMessage('EMPTY', provider), { provider, model, finish });
     return { text: full, finish };
   }
 
@@ -860,7 +890,7 @@
     else att.arm(o.timeoutMs || config.totalMs, false);
     try {
       const r = c.provider === 'gemini' ? await geminiRequest(c.model, o, v, att)
-        : c.provider === 'groq' ? await groqRequest(c.model, o, v, att) : await claudeRequest(c.model, o, v, att);
+        : c.provider === 'groq' || c.provider === 'openai' ? await groqRequest(c.model, o, v, att, c.provider) : await claudeRequest(c.model, o, v, att);
       r.firstAt = att.first || now();
       return r;
     } catch (e) {
@@ -896,7 +926,9 @@
         if (c.provider === 'gemini' && v.thinking && thinkingFor(c.model)) { v.thinking = false; continue; }
         if (c.provider === 'claude' && !v.noTemperature && /temperature/i.test(d)) { v.noTemperature = true; continue; }
         if (c.provider === 'groq' && !v.noReasoning && /gpt-oss/.test(c.model) && /reasoning/i.test(d)) { v.noReasoning = true; continue; }
-        if (c.provider === 'groq' && o.json && !v.noJsonMode && /response_format|json/i.test(d)) { v.noJsonMode = true; continue; }
+        if (c.provider === 'openai' && !v.noReasoning && /reasoning/i.test(d)) { v.noReasoning = true; continue; }
+        if (c.provider === 'openai' && !v.noTemperature && /temperature/i.test(d)) { v.noTemperature = true; continue; }
+        if ((c.provider === 'groq' || c.provider === 'openai') && o.json && !v.noJsonMode && /response_format|json/i.test(d)) { v.noJsonMode = true; continue; }
         throw e;
       }
     }
@@ -910,7 +942,7 @@
     if (o.parts && o.parts.length && PROVIDERS.some(p => keyOf(p))) {
       return aiError('NO_KEY', 'Ce type de fichier demande une clé Gemini — ajoutez-la dans les réglages.');
     }
-    return aiError('NO_KEY', 'Aucune clé IA configurée — ajoutez une clé Gemini (gratuite) ou Claude dans les réglages.');
+    return aiError('NO_KEY', 'Aucune clé IA configurée — ajoutez une clé OpenAI, Gemini (gratuite) ou Claude dans les réglages.');
   }
 
   function allFailed(errors) {

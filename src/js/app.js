@@ -3427,7 +3427,7 @@
 
   function onImportedKeys(x) {
     if (!x) return;
-    const names = (ks) => ks.map((k) => (k === 'claudeKey' ? 'Claude' : k === 'groqKey' ? 'Groq' : 'Gemini')).join(' et ');
+    const names = (ks) => ks.map((k) => (k === 'claudeKey' ? 'Claude' : k === 'groqKey' ? 'Groq' : k === 'openaiKey' ? 'OpenAI' : 'Gemini')).join(' et ');
     if (x.applied && x.applied.length && x.sessionOnly) {
       // PC emprunté probable : la clé du fichier n'est gardée que pour cette session (onglet).
       sheet({

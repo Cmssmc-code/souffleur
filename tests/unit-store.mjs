@@ -58,7 +58,7 @@ async function rejects(promise, code) {
 
   const def = S.store.settings();
   check('réglages par défaut (SPEC)', JSON.stringify(def) === JSON.stringify({
-    geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' },
+    openaiKey: '', geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' },
     theme: 'auto', fontScale: 1, lang: 'fr-FR', autoAnswer: true, answerDelayMs: 900, onboarded: false
   }), JSON.stringify(def));
   def.theme = 'dark';
@@ -88,7 +88,7 @@ async function rejects(promise, code) {
   check('rememberKeys=true → retour en localStorage', local.getItem('souffleur.keys').includes('AIzaFAUSSE') && !session.getItem('souffleur.keys'));
   S.store.setKeys({ claudeKey: 'sk-ant-FAUSSE' });
   check('setKeys partiel', S.store.settings().claudeKey === 'sk-ant-FAUSSE' && S.store.settings().geminiKey === 'AIzaFAUSSE-CLE-DE-TEST');
-  S.store.setSettings({ answerDelayMs: 'abc', fontScale: 99, provider: 'openai' });
+  S.store.setSettings({ answerDelayMs: 'abc', fontScale: 99, provider: 'mistral' });
   const s3 = S.store.settings();
   check('réglages assainis', s3.answerDelayMs === 900 && s3.fontScale === 2.5 && s3.provider === 'auto', JSON.stringify(s3));
   S.store.setSettings(JSON.parse('{"__proto__":{"polluted":true}}'));

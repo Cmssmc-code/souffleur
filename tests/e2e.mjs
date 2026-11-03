@@ -532,7 +532,7 @@ await test('réglages : clé non mémorisée → sessionStorage uniquement', asy
 await test('diagnostic : vérifications, micro et clé', async () => {
   mock.reset();
   await gotoApp(page, BASE, '#/diag');
-  await page.waitForFunction(() => document.querySelectorAll('.dg-row').length === 11 && !document.querySelector('.dg-row.is-pending'), null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll('.dg-row').length === 12 && !document.querySelector('.dg-row.is-pending'), null, { timeout: 20000 });
   const gem = await page.getAttribute('.dg-row[data-key="gemini"]', 'class');
   assert(/is-ok/.test(gem), `clé Gemini OK : ${gem}`);
   await page.click('[data-act="row"][data-key="mic"]');

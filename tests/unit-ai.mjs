@@ -341,6 +341,36 @@ test('Groq : gros modèles seulement, flux SSE OpenAI, Whisper prioritaire pour 
   assert.equal(t.text, 'Pourquoi le Recho ?');
 });
 
+test('OpenAI : prioritaire en auto, gpt-5.4-mini sans raisonnement, Claude en secours sur 429', async () => {
+  const isOpenai = c => c.url.startsWith('https://api.openai.com/');
+  const env = makeEnv({ openaiKey: 'sk-proj-test', claudeKey: 'c-key', race: false });
+  const picked = env.ai.pick('answer');
+  assert.equal(picked[0].provider, 'openai', 'OpenAI en tête : ' + JSON.stringify(picked[0]));
+  assert.equal(picked[0].model, 'gpt-5.4-mini');
+  const chunk = t => 'data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: t } }] }) + '\n\n';
+  env.handler = () => bytesResponse(chunk('**Je veux ') + chunk('rejoindre BDO.**') + 'data: [DONE]\n\n');
+  const deltas = [];
+  const r = await env.ai.generate({ prompt: 'Q', system: 'S', stream: true, temperature: 0.4, maxTokens: 700, onDelta: t => deltas.push(t) });
+  assert.equal(r.provider, 'openai');
+  assert.equal(r.model, 'gpt-5.4-mini');
+  assert.equal(r.text, '**Je veux rejoindre BDO.**');
+  const call = env.calls.find(isOpenai);
+  assert.ok(call.url.endsWith('/v1/chat/completions'));
+  assert.equal(call.headers.Authorization || call.headers.authorization, 'Bearer sk-proj-test');
+  assert.equal(call.body.reasoning_effort, 'none');
+  assert.equal(call.body.max_completion_tokens, 700);
+  assert.ok(!('max_tokens' in call.body) && !('temperature' in call.body), 'paramètres refusés par GPT-5 absents');
+  assert.equal(call.body.messages[0].role, 'system');
+  // Quota OpenAI épuisé → bascule sur Claude.
+  const env2 = makeEnv({ openaiKey: 'sk-proj-test', claudeKey: 'c-key', race: false });
+  env2.handler = (c) => isOpenai(c)
+    ? new Response(JSON.stringify({ error: { message: 'You exceeded your current quota', type: 'insufficient_quota' } }), { status: 429, headers: { 'content-type': 'application/json' } })
+    : claudeSSE(['**Secours.**']);
+  const r2 = await env2.ai.generate({ prompt: 'Q', stream: true });
+  assert.equal(r2.provider, 'claude');
+  assert.equal(r2.text, '**Secours.**');
+});
+
 test('réponse tronquée (MAX_TOKENS) → relance avec un budget plus grand, texte complet', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
   let n = 0;

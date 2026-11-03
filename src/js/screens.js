@@ -1246,6 +1246,7 @@
 
     body.innerHTML = `
       ${section('Clés d’intelligence artificielle', `
+        ${keyRow({ id: 'openai', name: 'OpenAI (GPT-5.4 mini)', icon: 'bolt', color: 'blue', badge: '<span class="pill pill-ok">Prioritaire · la plus rapide</span>', url: 'https://platform.openai.com/api-keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'proj-…', hint: 'Réponses en direct (1er mot ≈ 0,5 s) et préparation.' })}
         ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite · recommandée</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir une clé gratuite', placeholder: 'AIza…', hint: 'Transcription du recruteur, réponses et préparation.' })}
         ${keyRow({ id: 'claude', name: 'Anthropic Claude', icon: 'shield', color: 'orange', badge: '<span class="pill">Secours · payante</span>', url: 'https://console.anthropic.com/settings/keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'ant-…', hint: 'Facultative : prend le relais si Gemini est saturé.' })}
         ${keyRow({ id: 'groq', name: 'Groq (Whisper + Kimi K2)', icon: 'bolt', color: 'violet', badge: '<span class="pill pill-ok">Gratuite · ultra-rapide</span>', url: 'https://console.groq.com/keys', linkLabel: 'Obtenir une clé gratuite', placeholder: 'gsk_…', hint: 'Transcription Whisper en ~0,3 s et 3e coureur pour les réponses.' })}
@@ -1253,8 +1254,8 @@
           ${sw('rememberKeys', s.rememberKeys !== false, 'Se souvenir des clés sur cet appareil')}</div>`)}
 
       ${section('Intelligence artificielle', `
-        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : Gemini d’abord, puis Claude et Groq en secours.')}
-          ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['gemini', 'Gemini'], ['claude', 'Claude'], ['groq', 'Groq']])}</div>
+        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : OpenAI d’abord, puis Gemini, Claude et Groq en secours.')}
+          ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['openai', 'OpenAI'], ['gemini', 'Gemini'], ['claude', 'Claude'], ['groq', 'Groq']])}</div>
         <div class="list-row">${tile('bolt', 'blue')}${main('Course entre IA', 'Avec plusieurs clés : la question part sur toutes, la réponse la plus rapide s’affiche.')}
           ${sw('race', s.race !== false, 'Course entre IA')}</div>
         ${PURPOSES.map(([p, label, sub]) => `<div class="list-row st-model st-wrap">${tile(p === 'answer' ? 'sparkles' : p === 'fast' ? 'waveform' : 'doc', p === 'answer' ? 'blue' : p === 'fast' ? 'teal' : 'green')}${main(label, sub, `data-auto="${p}"`)}
@@ -1388,7 +1389,7 @@
         if (typeof S.store.clearAll === 'function') await S.store.clearAll();
         const all = await S.store.list();
         for (const d of all || []) await S.store.remove(d.id);
-        setSettings({ geminiKey: '', claudeKey: '', groqKey: '', onboarded: false });
+        setSettings({ openaiKey: '', geminiKey: '', claudeKey: '', groqKey: '', onboarded: false });
         [window.localStorage, window.sessionStorage].forEach((stg) => {
           try { Object.keys(stg).filter((k) => /^souffleur/i.test(k)).forEach((k) => stg.removeItem(k)); } catch (e) { /* ignore */ }
         });
@@ -1515,6 +1516,7 @@
       { key: 'mic', icon: 'mic', title: 'Micro' },
       { key: 'speech', icon: 'waveform', title: 'Reconnaissance vocale' },
       { key: 'display', icon: 'video', title: 'Son de l’appel (onglet ou système)' },
+      { key: 'openai', icon: 'bolt', title: 'Clé OpenAI (prioritaire)' },
       { key: 'gemini', icon: 'sparkles', title: 'Clé Gemini' },
       { key: 'claude', icon: 'shield', title: 'Clé Claude (secours)' },
       { key: 'storage', icon: 'doc', title: 'Stockage persistant' },
@@ -1643,24 +1645,24 @@
     async function checkKeys() {
       if (busy.keys) return;
       const s = settings();
-      const g = !!cleanKey(s.geminiKey); const cl = !!cleanKey(s.claudeKey);
-      if (!g) set('gemini', { status: 'warn', detail: 'Aucune clé Gemini.', advice: 'Sans clé : mode haut-parleur et réponses préparées uniquement. La clé est gratuite (aistudio.google.com/apikey).', action: 'Ajouter une clé' });
-      if (!cl) set('claude', { status: 'info', detail: 'Facultative.', advice: 'Une clé Claude prend le relais si Gemini est saturé ou indisponible.', action: 'Ajouter' });
-      if (!g && !cl) return;
+      const g = !!cleanKey(s.geminiKey); const cl = !!cleanKey(s.claudeKey); const oa = !!cleanKey(s.openaiKey);
+      if (!oa) set('openai', { status: g || cl ? 'info' : 'warn', detail: 'Aucune clé OpenAI.', advice: 'La clé OpenAI donne les réponses les plus rapides (GPT-5.4 mini).', action: 'Ajouter une clé' });
+      if (!g) set('gemini', { status: oa || cl ? 'info' : 'warn', detail: oa ? 'Facultative (OpenAI configurée).' : 'Aucune clé Gemini.', advice: oa ? 'Gemini sert seulement à transcrire le recruteur dans les modes sans le programme « Son du PC ».' : 'Sans clé : mode haut-parleur et réponses préparées uniquement. La clé est gratuite (aistudio.google.com/apikey).', action: 'Ajouter une clé' });
+      if (!cl) set('claude', { status: 'info', detail: 'Facultative.', advice: 'Une clé Claude prend le relais si les autres IA sont saturées ou indisponibles.', action: 'Ajouter' });
+      if (!g && !cl && !oa) return;
+      const present = [['openai', oa], ['gemini', g], ['claude', cl]];
       if (navigator.onLine === false) {
-        if (g) set('gemini', { status: 'warn', detail: 'Clé présente, test impossible hors ligne.' });
-        if (cl) set('claude', { status: 'warn', detail: 'Clé présente, test impossible hors ligne.' });
+        present.forEach(([p, ok]) => { if (ok) set(p, { status: 'warn', detail: 'Clé présente, test impossible hors ligne.' }); });
         return;
       }
       busy.keys = true;
-      if (g) set('gemini', { status: 'pending', detail: 'Test de la clé et de la latence…' });
-      if (cl) set('claude', { status: 'pending', detail: 'Test de la clé et de la latence…' });
+      present.forEach(([p, ok]) => { if (ok) set(p, { status: 'pending', detail: 'Test de la clé et de la latence…' }); });
       let res = [];
       let err = null;
       try { res = (await S.ai.test()) || []; } catch (e) { err = e; }
       busy.keys = false;
       if (!c.alive) return;
-      [['gemini', g], ['claude', cl]].forEach(([p, present]) => {
+      present.forEach(([p, present]) => {
         if (!present) return;
         const mine = res.filter((r) => r && r.provider === p);
         const ok = mine.find((r) => r.ok);
@@ -1677,7 +1679,7 @@
           const t = mine.length || err ? errText(e) : 'non testée (réglage « Fournisseur »)';
           let advice = 'Réessayez dans un instant.';
           if (/clé refusée/.test(t)) advice = 'Clé refusée : recopiez-la depuis la page de la clé, sans espace, puis enregistrez.';
-          else if (/quota/.test(t)) advice = p === 'gemini' ? 'Quota gratuit atteint : patientez une minute ou ajoutez une clé Claude de secours.' : 'Crédit ou quota insuffisant sur le compte Anthropic.';
+          else if (/quota/.test(t)) advice = p === 'gemini' ? 'Quota gratuit atteint : patientez une minute ou ajoutez une clé Claude de secours.' : p === 'openai' ? 'Crédit ou quota insuffisant sur le compte OpenAI.' : 'Crédit ou quota insuffisant sur le compte Anthropic.';
           else if (/réseau/.test(t)) advice = 'Pas de réponse du serveur : vérifiez internet ou un pare-feu d’entreprise (essayez le partage de connexion du téléphone).';
           set(p, { status: mine.length || err ? 'err' : 'warn', detail: t.charAt(0).toUpperCase() + t.slice(1), advice, action: 'Retester' });
         }
@@ -1913,7 +1915,7 @@
         const k = btn.dataset.key;
         if (k === 'mic') testMic();
         else if (k === 'display') testDisplay();
-        else if (k === 'gemini' || k === 'claude') {
+        else if (k === 'openai' || k === 'gemini' || k === 'claude') {
           if (!cleanKey(settings()[`${k}Key`])) go('#/settings');
           else checkKeys();
         } else if (k === 'storage') {
