@@ -788,7 +788,7 @@ test('découverte automatique en arrière-plan au 1er appel (non bloquante)', as
   await sleep(30);
   assert.ok(env.calls.some(c => /\/models\?pageSize/.test(c.url)));
   assert.equal(env.ai.pick('answer')[0].model, 'gemini-2.5-flash');
-  const cache = JSON.parse(env.ctx.localStorage.getItem('souffleur.models'));
+  const cache = JSON.parse(env.ctx.localStorage.getItem('souffleur.models.v2'));
   assert.deepEqual(cache.gemini.ids, ['gemini-2.5-flash']);
   assert.ok(!JSON.stringify(cache).includes('g-key'), 'la clé n\'est jamais stockée dans le cache');
 });

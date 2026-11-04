@@ -8,7 +8,7 @@
   const GROQ_API = 'https://api.groq.com/openai/v1';
   const OPENAI_API = 'https://api.openai.com/v1';
   const CLAUDE_VERSION = '2023-06-01';
-  const CACHE_KEY = 'souffleur.models';
+  const CACHE_KEY = 'souffleur.models.v2';
   const PROVIDERS = ['openai', 'gemini', 'claude', 'groq'];
   const LABEL = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
@@ -20,7 +20,7 @@
       'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
     // Groq : uniquement de gros modèles (assez intelligents pour un entretien), jamais les « instant » / 8B.
-    groq: ['moonshotai/kimi-k2-instruct-0905', 'moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
+    groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'moonshotai/kimi-k2-instruct-0905']
   };
   const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3'];
 
@@ -349,12 +349,14 @@
   }
 
   // Groq : on ne garde que les gros modèles généralistes, classés par qualité de réponse.
-  const EXCLUDE_GROQ = /whisper|guard|tts|playai|orpheus|compound|distil|instant|safeguard|allam|-8b|-1b|-3b|mini|scout|20b/i;
+  // Les modèles inconnus (nouveautés Groq) restent utilisables, après les modèles connus : sans ça, une liste
+  // Groq renouvelée ne donnait plus rien et l'app retombait sur des modèles retirés (404).
+  const EXCLUDE_GROQ = /whisper|guard|tts|playai|orpheus|compound|distil|instant|safeguard|allam|embed|vision|audio|-8b|-1b|-3b|mini|scout|20b/i;
   function groqInfo(id) {
     id = String(id || '');
     if (!id || EXCLUDE_GROQ.test(id)) return null;
-    const score = /kimi-k2/.test(id) ? 90 : /gpt-oss-120b/.test(id) ? 84 : /llama-3\.3-70b/.test(id) ? 80 : /llama-4-maverick/.test(id) ? 78 : /qwen3-32b/.test(id) ? 70 : 0;
-    return score ? { id, score: score + (/\d{4}$/.test(id) ? 1 : 0) } : null;
+    const score = /gpt-oss-120b/.test(id) ? 90 : /kimi-k/.test(id) ? 86 : /llama-3\.3-70b/.test(id) ? 80 : /llama-4-maverick/.test(id) ? 78 : /qwen3/.test(id) ? 70 : 40;
+    return { id, score: score + (/\d{4}$/.test(id) ? 1 : 0) };
   }
   function rankGroq(ids) {
     return (ids || []).map(groqInfo).filter(Boolean).sort((a, b) => b.score - a.score).map(i => i.id).slice(0, 3);
