@@ -1,8 +1,14 @@
 /* Souffleur — exam.js : simulateur d'oral blanc d'anglais des affaires (UE 218 du DSGC, Cnam Intec).
  * Écrans : accueil examen (''), choix du sujet et console jury ('oral'), sujet à partager ('sujet'),
- * entraînement solo ('eleve'), fiches de révision ('fiches'), historique ('historique').
+ * entraînement solo ('eleve'), appel d'entraînement Teams ou Meet ('appel'), fiches de révision ('fiches'), historique ('historique').
  * Stockage : S.examStore (localStorage 'souffleur.exam.v1'). Données : S.examSubjects, S.examFiches. IA : S.examAI.
- * Éthique : rien n'est soufflé à l'élève pendant un oral. Le direct sert le jury ; l'élève reçoit la correction après coup. */
+ * Éthique : l'aide en direct côté élève (réponse IA, traduction de la question du jury, mots clés, fenêtre flottante)
+ * reste verrouillée jusqu'au jeudi 12/11/2026 14:00, heure de Paris, mesurée sur l'heure du serveur (S.examLock) :
+ * l'oral officiel à distance était prévu le jeudi 12/11 à 10 h et un appel d'entraînement ne se distingue pas de cet oral.
+ * Aucun contournement (réglage, paramètre d'URL, drapeau de stockage, interrupteur de test).
+ * Côté jury, la réponse modèle d'une question suggérée par l'IA est disponible tout de suite. Celle d'une question
+ * entendue (micro du jury seulement, jamais l'autre partie ni un micro mêlé) suit le même verrou : avec des
+ * haut-parleurs, ce micro capte aussi l'autre partie. */
 (function (S) {
   'use strict';
 
@@ -84,33 +90,37 @@
   // Téléphone / tablette : pas de programme « Son du PC » possible.
   const isMobileDevice = () => { try { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (window.matchMedia && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches); } catch (e) { return false; } };
 
-  /* Lien de la réunion Teams (oral blanc à distance). Dernier lien mémorisé pour pré-remplir la séance suivante. */
+  /* Lien de la réunion Teams ou Meet (oral blanc à distance). Dernier lien mémorisé pour pré-remplir la séance suivante. */
   const TEAMS_KEY = 'souffleur.exam.teams';
+  const LINK_BAD = 'Lien invalide : collez un lien Teams (teams.microsoft.com, teams.live.com, aka.ms) ou Meet (meet.google.com).';
+  const LINK_HINT = 'Collez le lien reçu : Teams (teams.microsoft.com, teams.live.com, aka.ms) ou Meet (meet.google.com).';
   function teamsClean(v) {
     let t = str(v).trim();
     const m = t.match(/https:\/\/[^\s<>"']+/i); // lien collé au milieu d'une invitation
     if (m) t = m[0];
     return t.replace(/[.,;)\]]+$/, '');
   }
+  const isMeet = (t) => /^https:\/\/(meet\.google\.com\/[a-z0-9-]+\/?(\?[^\s#]*)?|g\.co\/meet\/[a-z0-9-]+\/?)$/i.test(t);
   function teamsValid(v) {
     const t = teamsClean(v);
-    return /^https:\/\/([a-z0-9-]+\.)*(teams\.microsoft\.com|teams\.live\.com|teams\.cloud\.microsoft|aka\.ms)(\/|$)/i.test(t) ? t : '';
+    return /^https:\/\/([a-z0-9-]+\.)*(teams\.microsoft\.com|teams\.live\.com|teams\.cloud\.microsoft|aka\.ms)(\/|$)/i.test(t) || isMeet(t) ? t : '';
   }
+  const meetingApp = (v) => (isMeet(teamsClean(v)) ? 'Meet' : 'Teams');
   function lastTeams() { try { return localStorage.getItem(TEAMS_KEY) || ''; } catch (e) { return ''; } }
   function rememberTeams(link) { try { if (link) localStorage.setItem(TEAMS_KEY, link); } catch (e) { /* rien */ } }
   function openTeams(link) {
     const t = teamsValid(link);
-    if (!t) { toast('Lien Teams invalide : collez un lien https://teams.microsoft.com/…, teams.live.com/… ou aka.ms/…', 'warn', { duration: 7000 }); return false; }
+    if (!t) { toast(LINK_BAD, 'warn', { duration: 7000 }); return false; }
     // Avec « noopener », window.open renvoie null même quand l'onglet s'ouvre.
     window.open(t, '_blank', 'noopener');
-    toast('Ouverture de la réunion Teams dans un nouvel onglet.', 'ok');
+    toast(`Ouverture de la réunion ${meetingApp(t)} dans un nouvel onglet.`, 'ok');
     return true;
   }
   function teamsMessage(link, dateText) {
     return [
       'Bonjour Audrey,',
       '',
-      `Voici le lien de notre oral blanc d’anglais (UE 218)${dateText ? ' ' + dateText : ''} :`,
+      `Voici le lien ${meetingApp(link) === 'Meet' ? 'Google Meet' : 'Teams'} de notre oral blanc d’anglais (UE 218)${dateText ? ' ' + dateText : ''} :`,
       link,
       '',
       'Consignes, comme le jour J :',
@@ -127,15 +137,57 @@
     o = o || {};
     const v = link || '';
     return `<div class="ex-teams${v && teamsValid(v) ? ' is-set' : ''}" data-b="teams">
-      <label class="label" for="${o.id || 'ex-teams-link'}">${icon('video', 'ico-inline')} ${esc(o.label || 'Lien de la réunion Teams')}</label>
+      <label class="label" for="${o.id || 'ex-teams-link'}">${icon('video', 'ico-inline')} ${esc(o.label || 'Lien de la réunion (Teams ou Meet)')}</label>
       <div class="ex-teams-row">
-        <input id="${o.id || 'ex-teams-link'}" class="input" type="url" inputmode="url" autocomplete="off" spellcheck="false" data-f="teams" value="${esc(v)}" placeholder="https://teams.microsoft.com/l/meetup-join/…" aria-describedby="${o.id || 'ex-teams-link'}-hint">
+        <input id="${o.id || 'ex-teams-link'}" class="input" type="url" inputmode="url" autocomplete="off" spellcheck="false" data-f="teams" value="${esc(v)}" placeholder="https://teams.microsoft.com/… ou https://meet.google.com/…" aria-describedby="${o.id || 'ex-teams-link'}-hint">
         <button type="button" class="btn${o.primary ? ' btn-primary' : ''}" data-act="teams-join">${icon('video')}<span>${esc(o.joinLabel || 'Rejoindre')}</span></button>
         ${o.copy ? `<button type="button" class="btn" data-act="teams-copy">${icon('copy')}<span>Copier pour Audrey</span></button>` : ''}
       </div>
-      <small class="muted" id="${o.id || 'ex-teams-link'}-hint" data-b="teams-hint">${esc(o.hint || 'Collez le lien reçu (teams.microsoft.com, teams.live.com ou aka.ms).')}</small>
+      <small class="muted" id="${o.id || 'ex-teams-link'}-hint" data-b="teams-hint">${esc(o.hint || LINK_HINT)}</small>
     </div>`;
   }
+
+  /* Verrou de l'aide en direct côté élève : ouverte le jeudi 12/11/2026 à 14:00 (Paris), d'après l'heure du serveur
+     (en-tête Date d'une requête HEAD sans cache). Cette heure est rattachée à performance.now() : changer l'horloge
+     du PC après coup n'ouvre rien. Sans réponse du serveur ni lecture antérieure : horloge du PC. */
+  const LOCK_TTL = 10 * 60e3;
+  const mono = () => (window.performance && performance.now ? performance.now() : Date.now());
+  let lockRead = null; // { serverMs, perfAt, dateAt } : dernière heure du serveur
+  let lockPending = null;
+  function lockDecide(serverMs, localMs) {
+    const server = typeof serverMs === 'number' && isFinite(serverMs);
+    const now = server ? serverMs : Number(localMs);
+    return { open: isFinite(now) && now >= S.examLock.unlockAt, source: server ? 'server' : 'local', now };
+  }
+  async function lockProbe() {
+    if (!/^https?:$/.test(location.protocol)) return null;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 6000);
+    const t0 = mono();
+    try {
+      const r = await fetch(new URL('sw.js?now=' + Date.now(), location.href).href, { method: 'HEAD', cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      const d = Date.parse(r.headers.get('date') || '');
+      const t1 = mono();
+      return isFinite(d) ? { serverMs: d + (t1 - t0) / 2, perfAt: t1, dateAt: Date.now() } : null;
+    } catch (e) { return null; } finally { clearTimeout(timer); }
+  }
+  const lockNow = () => (lockRead ? lockRead.serverMs + (mono() - lockRead.perfAt) : null);
+  async function lockCheck(o) {
+    const age = lockRead ? mono() - lockRead.perfAt : Infinity;
+    // Lecture fraîche, sauf si l'horloge murale a sauté (veille, changement d'heure) : on redemande au serveur.
+    const fresh = lockRead && age >= 0 && age < LOCK_TTL && Math.abs(Date.now() - lockRead.dateAt - age) < 60e3;
+    if (!fresh || (o && o.force)) {
+      if (!lockPending) lockPending = lockProbe().then((r) => { if (r) lockRead = r; lockPending = null; });
+      await lockPending;
+    }
+    return lockDecide(lockNow(), Date.now());
+  }
+  Object.defineProperty(S, 'examLock', {
+    enumerable: true,
+    value: Object.freeze({ unlockAt: Date.UTC(2026, 10, 12, 13, 0, 0), label: 'jeudi 12 novembre 2026 à 14 h', decide: lockDecide, check: lockCheck })
+  });
+  const lockLocalOpen = () => Date.now() >= S.examLock.unlockAt;
+  const HEARD_LOCK_NOTE = 'Réponse attendue sur une question entendue : à partir du jeudi 12 novembre à 14 h. Le bouton « Réponse modèle » marche dès maintenant.';
 
   /* ====================================================================== *
    *  Données (sujets, fiches, thèmes)
@@ -250,6 +302,7 @@
       old.slice(0, Math.max(1, Math.floor(old.length / 2))).forEach((s) => {
         if (s.expose) s.expose.transcript = arr(s.expose.transcript).slice(-40);
         if (s.interview) s.interview.turns = arr(s.interview.turns).slice(-30);
+        if (s.call) { s.call.turns = arr(s.call.turns).slice(-60); s.call.answers = arr(s.call.answers).slice(-30); }
       });
       return true;
     }
@@ -333,10 +386,11 @@
     return {
       id: 'ex-' + uid(), kind, subjectId: s.id, subject: s, createdAt: nowIso(), updatedAt: nowIso(),
       phase: 'prep',
-      teamsLink: kind === 'jury' ? teamsValid(lastTeams()) : '',
+      teamsLink: kind === 'jury' ? teamsValid(lastTeams()) : kind === 'call' ? teamsValid(prefs().studentTeams || '') : '',
       prep: { startedAt: null, endedAt: null, durMin: 60, notes: kind === 'solo' ? {} : '', strict: true },
       expose: { startedAt: null, endedAt: null, transcript: [], checklist: {}, checklistAuto: {}, errors: [], juryNotes: '', tips: [] },
-      interview: { startedAt: null, endedAt: null, turns: [], asked: [], skipped: [], current: null, target: 6 },
+      interview: { startedAt: null, endedAt: null, turns: [], asked: [], skipped: [], current: null, target: 6, modelAnswers: [] },
+      call: kind === 'call' ? { turns: [], answers: [], startedAt: null, endedAt: null } : undefined,
       evaluation: null,
       alarms: {}
     };
@@ -346,10 +400,23 @@
     s.prep = Object.assign({ startedAt: null, endedAt: null, durMin: 60, notes: s.kind === 'solo' ? {} : '', strict: true }, s.prep || {});
     s.expose = Object.assign({ startedAt: null, endedAt: null, transcript: [], checklist: {}, checklistAuto: {}, errors: [], juryNotes: '', tips: [] }, s.expose || {});
     s.interview = Object.assign({ startedAt: null, endedAt: null, turns: [], asked: [], skipped: [], current: null, target: 6 }, s.interview || {});
+    s.interview.modelAnswers = arr(s.interview.modelAnswers);
+    if (s.kind === 'call') {
+      s.call = Object.assign({ startedAt: null, endedAt: null }, s.call || {});
+      s.call.turns = arr(s.call.turns);
+      s.call.answers = arr(s.call.answers).filter((a) => a && a.id);
+    }
     s.alarms = s.alarms || {};
     s.teamsLink = str(s.teamsLink);
     if (!['prep', 'expose', 'interview', 'review', 'done'].includes(s.phase)) s.phase = 'prep';
     return s;
+  }
+  const KIND_HASH = { jury: '#/oral/', solo: '#/eleve/', call: '#/appel/' };
+  const sessionHash = (s) => (KIND_HASH[s.kind] || '#/eleve/') + s.id;
+  const kindLabel = (s) => (s.kind === 'jury' ? 'Jury' : s.kind === 'call' ? 'Appel d’entraînement' : 'Solo');
+  function callCountLabel(s) {
+    const n = arr(s.call && s.call.answers).filter((a) => !a.skipped).length;
+    return n ? `${n} question${n > 1 ? 's' : ''}` : s.call && s.call.endedAt ? 'Terminé' : 'En cours';
   }
   const exposeText = (s) => arr(s.expose.transcript).map((x) => x.text).join(' ').trim();
   function durations(s) {
@@ -848,7 +915,7 @@
     </div>`);
     const actions = [];
     if (custom) actions.push({ label: 'Supprimer', kind: 'danger', icon: 'trash', onClick: async () => { if (await confirmSheet({ title: 'Supprimer ce sujet ?', text: s.title, okLabel: 'Supprimer', danger: true })) { store.removeSubject(s.id); toast('Sujet supprimé.', 'ok'); S.app.refresh && S.app.refresh(); } } });
-    actions.push({ label: mode === 'solo' ? 'M’entraîner sur ce sujet' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
+    actions.push({ label: mode === 'solo' ? 'M’entraîner sur ce sujet' : mode === 'call' ? 'Choisir pour l’appel' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
     sheet({ title: hide ? 'Sujet caché' : s.title, body, wide: true, actions });
   }
 
@@ -865,7 +932,7 @@
         <div class="ex-draw-env">${icon('doc')}</div>
         ${themeChip(pick.theme)}
         <p class="ex-draw-q" lang="en">${esc(pick.question)}</p>
-        <p class="small muted">Comme le jour J : texte de presse anglo-saxonne + une question. ${mode === 'jury' ? 'Partagez-le dans Teams au lancement de la préparation.' : 'Le chrono d’1 h démarre quand vous êtes prête.'}</p>
+        <p class="small muted">Comme le jour J : texte de presse anglo-saxonne + une question. ${mode === 'jury' ? 'Partagez-le dans Teams ou Meet au lancement de la préparation.' : mode === 'call' ? 'Il reste affiché pendant l’appel.' : 'Le chrono d’1 h démarre quand vous êtes prête.'}</p>
       </div>`;
       body.firstElementChild.classList.add('pop');
     }
@@ -890,7 +957,7 @@
     const last = sc[sc.length - 1];
     const prev = sc[sc.length - 2];
     const delta = last && prev ? round1(last.evaluation.total - prev.evaluation.total) : null;
-    const open = list.find((s) => s.phase !== 'done' && !s.evaluation && (s.prep.startedAt || s.expose.startedAt) && Date.now() - Date.parse(stamp(s)) < 4 * 86400e3);
+    const open = list.find((s) => (s.kind === 'call' ? s.call && s.call.startedAt && !s.call.endedAt : s.phase !== 'done' && !s.evaluation && (s.prep.startedAt || s.expose.startedAt)) && Date.now() - Date.parse(stamp(s)) < 4 * 86400e3);
     const nSubjects = store.subjects().length;
     const showInt = !!settings().showInterviews;
     root.innerHTML = `<div class="screen ex ex-home">
@@ -922,19 +989,24 @@
 
       ${open ? `<section class="card ex-resume">
         <span class="tile tile-orange">${icon('clock')}</span>
-        <div class="grow"><b>Séance en cours</b><small class="muted">${open.kind === 'jury' ? 'Jury' : 'Entraînement'} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
-        <button type="button" class="btn btn-primary btn-sm" data-go="${open.kind === 'jury' ? '#/oral/' : '#/eleve/'}${esc(open.id)}">${icon('play')}<span>Reprendre</span></button>
+        <div class="grow"><b>Séance en cours</b><small class="muted">${open.kind === 'solo' ? 'Entraînement' : esc(kindLabel(open))} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
+        <button type="button" class="btn btn-primary btn-sm" data-go="${esc(sessionHash(open))}">${icon('play')}<span>Reprendre</span></button>
       </section>` : ''}
 
       <div class="ex-roles">
         <button type="button" class="card ex-role ex-role-jury" data-go="#/oral/new">
           <span class="ex-role-ic">${icon('person2')}</span>
-          <span class="ex-role-text"><b>Je fais passer l’oral</b><span>Jury · sujet à partager dans Teams, chronos, grille, questions à poser, note /20</span></span>
+          <span class="ex-role-text"><b>Je fais passer l’oral</b><span>Jury · sujet à partager dans Teams ou Meet, chronos, grille, questions à poser, note /20</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
         <button type="button" class="card ex-role ex-role-solo" data-go="#/eleve">
           <span class="ex-role-ic">${icon('graduation')}</span>
           <span class="ex-role-text"><b>Je m’entraîne</b><span>Élève · préparation chronométrée, exposé au micro, jury IA, correction après coup</span></span>
+          ${icon('chevron-right', 'chev')}
+        </button>
+        <button type="button" class="card ex-role ex-role-call" data-go="#/appel">
+          <span class="ex-role-ic">${icon('video')}</span>
+          <span class="ex-role-text"><b>Appel d’entraînement</b><span>${lockLocalOpen() ? 'Teams ou Meet · réponses IA en direct' : 'Teams ou Meet · réponses IA en direct dès le jeudi 12 novembre à 14 h'}</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
       </div>
@@ -963,6 +1035,7 @@
     setCurrent({ leave: off });
   }
   function phaseLabel(s) {
+    if (s.kind === 'call') return s.call && s.call.endedAt ? 'terminé' : s.call && s.call.startedAt ? 'en cours' : 'pas commencé';
     return ({ prep: 'préparation', expose: 'exposé', interview: s.kind === 'solo' ? 'jury IA' : 'entretien', review: 'bilan', done: 'terminée' })[s.phase] || '';
   }
 
@@ -974,14 +1047,22 @@
     const start = (subj) => {
       const s = newSession(mode, subj);
       store.save(s);
-      go((mode === 'jury' ? '#/oral/' : '#/eleve/') + s.id);
+      go(sessionHash(s));
     };
     const solo = mode === 'solo';
+    const call = mode === 'call';
     st.hide = solo && prefs().soloHideSubjects !== false;
     const aiOk = aiReady();
     const needKey = aiOk ? '' : '<span class="pill pill-xs pill-warn ex-needkey">Clé IA requise</span>';
     root.innerHTML = `<div class="screen ex ex-chooser">
-      ${topbar({ title: solo ? 'Je m’entraîne' : 'Choisir le sujet', sub: solo ? 'Entraînement solo' : 'Jury · oral blanc', back: '#/' })}
+      ${topbar({ title: solo ? 'Je m’entraîne' : call ? 'Appel d’entraînement' : 'Choisir le sujet', sub: solo ? 'Entraînement solo' : call ? 'Teams ou Meet · sujet de l’appel' : 'Jury · oral blanc', back: '#/' })}
+      ${call ? `<section class="card card-pad ex-jury-ai ex-call-intro">
+        <div class="ex-jury-ai-main">
+          <span class="ex-role-ic">${icon('video')}</span>
+          <div><h1 class="h2">Choisissez le sujet de l’appel</h1>
+          <p class="muted small">Il reste affiché pendant l’appel Teams ou Meet. Souffleur écoute la question du jury et affiche une réponse en anglais, sa traduction et les mots clés${lockLocalOpen() ? '' : ', à partir du jeudi 12 novembre à 14 h'}.</p></div>
+        </div>
+      </section>` : ''}
       ${solo ? `<section class="card card-pad ex-jury-ai" style="--hue:150">
         <div class="ex-jury-ai-main">
           <span class="ex-role-ic">${icon('person2')}</span>
@@ -993,7 +1074,11 @@
         </div>
       </section>
       <section class="card card-pad ex-teams-join">
-        ${teamsFieldHTML(prefs().studentTeams || '', { id: 'ex-teams-student', label: 'Rejoindre l’oral blanc Teams', joinLabel: 'Ouvrir', hint: 'Collez le lien envoyé par Corentin, puis « Ouvrir ». Caméra allumée, feuilles blanches, aucun document.' })}
+        ${teamsFieldHTML(prefs().studentTeams || '', { id: 'ex-teams-student', label: 'Rejoindre l’oral blanc (Teams ou Meet)', joinLabel: 'Ouvrir', hint: 'Collez le lien envoyé par Corentin, puis « Ouvrir ». Caméra allumée, feuilles blanches, aucun document.' })}
+        <div class="ex-call-cta">
+          <button type="button" class="btn" data-go="#/appel">${icon('sparkles')}<span>Aide IA pendant l’appel</span></button>
+          <small class="muted">${lockLocalOpen() ? 'Réponses IA en direct pendant un appel d’entraînement.' : 'Réponses IA en direct pendant un appel d’entraînement, à partir du jeudi 12 novembre à 14 h.'}</small>
+        </div>
       </section>
       <section class="card card-pad ex-solo-intro">
         <h1 class="h2">Un oral blanc complet, seule</h1>
@@ -1041,7 +1126,7 @@
       else if (act === 'teams-join') {
         const f = $('[data-f="teams"]', root);
         const v = f ? f.value : '';
-        if (!v.trim()) { toast('Collez d’abord le lien Teams reçu par mail ou message.', 'warn'); if (f) f.focus(); return; }
+        if (!v.trim()) { toast('Collez d’abord le lien Teams ou Meet reçu par mail ou message.', 'warn'); if (f) f.focus(); return; }
         const link = teamsValid(v);
         if (link) { setPrefs({ studentTeams: link }); if (f) f.value = link; }
         openTeams(v);
@@ -1054,8 +1139,10 @@
       if (f) {
         const link = teamsValid(f.value);
         const hint = $('[data-b="teams-hint"]', root);
-        if (link) { f.value = link; setPrefs({ studentTeams: link }); if (hint) hint.textContent = 'Lien prêt : « Ouvrir » lance Teams dans un nouvel onglet.'; }
-        else if (f.value.trim() && hint) hint.textContent = 'Ce lien ne ressemble pas à un lien Teams (https://teams.microsoft.com/…, teams.live.com ou aka.ms).';
+        const box = $('[data-b="teams"]', root);
+        if (box) { box.classList.toggle('is-bad', !link && !!f.value.trim()); box.classList.toggle('is-set', !!link); }
+        if (link) { f.value = link; setPrefs({ studentTeams: link }); if (hint) hint.textContent = `Lien prêt : « Ouvrir » lance ${meetingApp(link)} dans un nouvel onglet.`; }
+        else if (f.value.trim() && hint) hint.textContent = LINK_BAD;
       }
     });
     markTab('home');
@@ -1120,25 +1207,36 @@
     });
   }
 
-  function createListen(C) {
+  // Sources qui séparent les voix : 'me' = la personne devant cet écran, 'them' = l'autre partie de l'appel.
+  const SPLIT_SRC = ['pc-interne', 'visio-casque'];
+  const NO_KEY_TAB = 'L’onglet de l’appel est transcrit par l’IA : ajoutez une clé dans Réglages, ou choisissez « Micro / haut-parleur ».';
+  function createListen(C, o) {
+    o = o || {};
     const mobile = isMobileDevice();
-    const A = { on: false, starting: false, cancelled: false, mobile, preset: (mobile && prefs().listenPreset === 'pc-interne') ? 'haut-parleur' : (prefs().listenPreset || ''), state: 'off', interim: '', offs: [], pc: mobile ? 'off' : 'unknown' };
-    function roleOf(who) {
-      if (A.preset === 'pc-interne') return who === 'me' ? 'jury' : 'student';
-      return 'student';
-    }
+    const prefKey = o.prefKey || 'listenPreset';
+    const saved = str(prefs()[prefKey]);
+    const A = { on: false, starting: false, cancelled: false, mobile, preset: mobile && SPLIT_SRC.includes(saved) ? 'haut-parleur' : saved, state: 'off', interim: '', offs: [], pc: mobile ? 'off' : 'unknown' };
+    const split = () => SPLIT_SRC.includes(A.preset);
+    const roleOf = o.roleOf ? (who) => o.roleOf(who, split()) : (who) => (split() && who === 'me' ? 'jury' : 'student');
+    const interimRoles = o.interimRoles || ['student'];
     function unsub() { A.offs.splice(0).forEach((f) => { try { f(); } catch (e) { /* rien */ } }); }
     async function start(preset) {
-      if (!S.audio || !S.audio.start) { toast('Module audio indisponible : utilisez les notes manuelles.', 'err'); return; }
+      if (!S.audio || !S.audio.start) { toast('Module audio indisponible' + (o.call ? '.' : ' : utilisez les notes manuelles.'), 'err'); return; }
       if (A.on || A.starting) return;
       A.preset = preset || A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
-      setPrefs({ listenPreset: A.preset });
+      if (A.mobile && SPLIT_SRC.includes(A.preset)) A.preset = 'haut-parleur';
+      setPrefs({ [prefKey]: A.preset });
+      if (A.preset === 'visio-casque' && !aiReady()) {
+        A.state = 'error'; C.paintListen();
+        toast(NO_KEY_TAB, 'warn', { duration: 9000, action: { label: 'Réglages', onClick: () => go('#/settings') } });
+        return;
+      }
       A.starting = true; A.cancelled = false; A.state = 'starting'; C.paintListen();
       unsub();
       // Voix de synthèse (question lue à voix haute) : ne pas la prendre pour l'élève.
       const speaking = () => Date.now() < (C.speakingUntil || 0);
       A.offs.push(S.audio.on('final', (ev) => { if (ev && ev.text && !speaking()) C.onHeard(roleOf(ev.who), str(ev.text).trim(), ev); }));
-      A.offs.push(S.audio.on('interim', (ev) => { if (ev && roleOf(ev.who) === 'student' && !speaking()) { A.interim = ev.text === '…' ? '' : str(ev.text); C.paintInterim(); } }));
+      A.offs.push(S.audio.on('interim', (ev) => { if (ev && interimRoles.includes(roleOf(ev.who)) && !speaking()) { A.interim = ev.text === '…' ? '' : str(ev.text); C.paintInterim(); } }));
       A.offs.push(S.audio.on('state', (ev) => {
         if (!ev) return;
         if (ev.state === 'error') {
@@ -1160,23 +1258,24 @@
           return;
         }
         A.on = true; A.state = 'listening';
-        toast(A.preset === 'pc-interne' ? 'Écoute du son de Teams lancée.' : 'Écoute du micro lancée.', 'ok');
+        toast(split() ? 'Écoute du son de l’appel lancée.' : 'Écoute du micro lancée.', 'ok');
         C.wantsWake = true; keepAwake(true);
       } catch (e) {
         unsub();
         A.on = false; A.state = A.cancelled ? 'off' : 'error';
         if (!A.cancelled && C.alive) {
           const msg = (e && e.code && S.audio.message && S.audio.message(e.code)) || errMsg(e);
-          toast(msg + ' La console reste utilisable (notes manuelles).', 'err', { duration: 9000 });
+          toast(msg + (o.call ? '' : ' La console reste utilisable (notes manuelles).'), 'err', { duration: 9000 });
         }
       } finally { A.starting = false; if (C.alive) C.paintListen(); }
     }
     // drainMs > 0 : on attend les dernières phrases (écouteurs encore branchés) avant de se désabonner.
-    async function stop(o) {
-      const drainMs = o && o.drainMs != null ? o.drainMs : 1500;
+    async function stop(opt) {
+      const drainMs = opt && opt.drainMs != null ? opt.drainMs : 1500;
       if (A.starting) A.cancelled = true;
       const was = A.on;
       A.on = false; A.state = 'off'; A.interim = '';
+      if (o.onStop) o.onStop();
       if (C.paintListen && C.alive) C.paintListen();
       if (was && S.audio && S.audio.stop) { try { await S.audio.stop({ drainMs }); } catch (e) { /* rien */ } }
       unsub();
@@ -1187,28 +1286,31 @@
       if (A.pc !== 'unknown' || A.mobile) return;
       A.pc = 'pending';
       A.pc = await probePcProgram();
-      if (A.pc === 'ok' && !prefs().listenPreset) A.preset = 'pc-interne';
+      if (A.pc === 'ok' && !prefs()[prefKey]) A.preset = 'pc-interne';
       if (C.paintListen) C.paintListen();
     }
-    return { A, start, stop, probe };
+    return { A, start, stop, probe, split };
   }
 
   function listenHTML(A, o) {
     o = o || {};
+    const pcSub = 'Teams ou Meet · programme « Son du PC »' + (A.pc === 'ok' ? ' détecté' : A.pc === 'pending' ? ' : recherche…' : ' requis');
     const sources = [
-      { id: 'pc-interne', label: 'Son de Teams sur ce PC', sub: A.pc === 'ok' ? 'Programme « Son du PC » détecté' : A.pc === 'pending' ? 'Recherche du programme « Son du PC »…' : 'Nécessite le programme « Son du PC »', rec: A.pc === 'ok' },
-      { id: 'haut-parleur', label: 'Micro / haut-parleur', sub: 'Le micro capte le son de l’appel (voix mêlées)' }
-    ].filter((x) => !(A.mobile && x.id === 'pc-interne'));
+      { id: 'pc-interne', ic: 'speaker', label: 'Son de l’appel sur ce PC', sub: pcSub, rec: A.pc === 'ok' },
+      { id: 'visio-casque', ic: 'globe', label: 'Onglet de l’appel dans Chrome', sub: 'Partagez l’onglet Meet ou Teams avec le son · clé IA requise' },
+      { id: 'haut-parleur', ic: 'mic', label: 'Micro / haut-parleur', sub: 'Le micro capte le son de l’appel (voix mêlées)' }
+    ].filter((x) => !(A.mobile && SPLIT_SRC.includes(x.id)));
     const sel = A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
     // Un seul bouton bleu par carte : tant que la phase n'a pas démarré, « Démarrer » est le bouton principal.
     const primary = A.on ? 'btn-danger' : o.quiet ? '' : 'btn-primary';
-    const stLabel = A.starting ? 'Démarrage…' : A.on ? 'J’écoute l’élève (en-GB)' : A.state === 'error' ? 'Écoute en erreur' : 'Écoute arrêtée';
+    const blocked = !A.on && o.blocked;
+    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? 'Écoute en erreur' : 'Écoute arrêtée';
     return `<div class="ex-listen ${A.on ? 'on' : ''}">
 <div class="ex-src"${sources.length < 2 ? ' hidden' : ''} role="radiogroup" aria-label="Source du son">${sources.map((x) => `<button type="button" class="ex-src-opt${sel === x.id ? ' on' : ''}" role="radio" aria-checked="${sel === x.id}" data-src="${x.id}"${A.on || A.starting ? ' disabled' : ''}>
-        <span class="ex-src-ic">${icon(x.id === 'pc-interne' ? 'video' : 'mic')}</span><span class="ex-src-t"><b>${esc(x.label)}${x.rec ? ' <span class="pill pill-xs pill-ok">Recommandé</span>' : ''}</b><small>${esc(x.sub)}</small></span></button>`).join('')}</div>
+        <span class="ex-src-ic">${icon(x.ic)}</span><span class="ex-src-t"><b>${esc(x.label)}${x.rec ? ' <span class="pill pill-xs pill-ok">Recommandé</span>' : ''}</b><small>${esc(x.sub)}</small></span></button>`).join('')}</div>
       <div class="ex-listen-bar">
-        <span class="ex-live-dot ${A.on ? 'on' : A.state === 'error' ? 'err' : ''}" aria-hidden="true"></span><span class="grow small" role="status">${esc(stLabel)}</span>
-        <button type="button" class="btn btn-sm ${primary}" data-act="${A.on ? 'listen-stop' : 'listen-start'}"${A.starting ? ' disabled' : ''}>${icon(A.on ? 'stop' : 'mic')}<span>${A.on ? 'Arrêter l’écoute' : 'Écouter l’élève'}</span></button>
+        <span class="ex-live-dot ${A.on ? 'on' : A.state === 'error' ? 'err' : ''}" aria-hidden="true"></span><span class="grow small" role="status" data-b="listen-status">${esc(stLabel)}</span>
+        <button type="button" class="btn btn-sm ${blocked ? '' : primary}" data-act="${A.on ? 'listen-stop' : 'listen-start'}"${A.starting || blocked ? ' disabled' : ''}>${icon(A.on ? 'stop' : 'mic')}<span>${A.on ? 'Arrêter l’écoute' : esc(o.startLabel || 'Écouter l’élève')}</span></button>
       </div>
     </div>`;
   }
@@ -1250,12 +1352,36 @@
     return w;
   }
 
+  function exportCallMd(s) {
+    const c = s.call || {};
+    const L = [`# Appel d’entraînement — UE 218 · ${fmtDate(s.createdAt, true)}`, ''];
+    L.push(`- Sujet : ${s.subject.title}${s.subject.theme ? ` (thème ${s.subject.theme})` : ''}`);
+    L.push(`- Question : ${s.subject.question}`);
+    if (teamsValid(s.teamsLink)) L.push(`- Réunion ${meetingApp(s.teamsLink)} : ${s.teamsLink}`);
+    if (c.startedAt) L.push(`- Durée : ${fmtDur((c.endedAt || Date.now()) - c.startedAt)}`);
+    const list = arr(c.answers).filter((a) => !a.skipped && a.question);
+    L.push('', '## Questions du jury et réponses', '');
+    if (!list.length) L.push('Aucune question enregistrée.');
+    list.forEach((a, i) => {
+      L.push(`### ${i + 1}. ${a.question}`, '');
+      if (a.fr) L.push(`- Traduction : ${a.fr}`);
+      if (a.text) L.push(`- Réponse IA : ${a.text}`);
+      if (arr(a.keyWords).length) L.push(`- Mots clés : ${a.keyWords.join(', ')}`);
+      if (a.error && !a.text) L.push(`- Réponse IA : non obtenue (${a.error})`);
+      if (a.mine) L.push(`- Ma réponse : ${a.mine}`);
+      L.push('');
+    });
+    if (arr(c.turns).length) L.push('## Échanges', '', ...c.turns.map((t) => `- **${t.who === 'jury' ? 'Jury' : 'Moi'}** : ${t.text}`));
+    return L.join('\n') + '\n';
+  }
+
   function exportMd(s) {
+    if (s.kind === 'call') return exportCallMd(s);
     const e = s.evaluation ? normEval(s.evaluation) : null;
     const d = durations(s);
     const L = [];
     L.push(`# Oral blanc — UE 218 · ${fmtDate(s.createdAt, true)}`, '');
-    L.push(`- Rôle : ${s.kind === 'jury' ? 'Jury (Teams)' : 'Entraînement solo'}`);
+    L.push(`- Rôle : ${s.kind === 'jury' ? `Jury (${teamsValid(s.teamsLink) ? meetingApp(s.teamsLink) : 'à distance'})` : 'Entraînement solo'}`);
     L.push(`- Sujet : ${s.subject.title}${s.subject.theme ? ` (thème ${s.subject.theme})` : ''}`);
     L.push(`- Question : ${s.subject.question}`);
     L.push(`- Durées : préparation ${fmtDur(d.prepMs)} · exposé ${fmtDur(d.exposeMs)} · entretien ${fmtDur(d.interviewMs)}`, '');
@@ -1276,6 +1402,11 @@
     const tx = exposeText(s);
     if (tx) L.push('', '## Transcription de l’exposé', '', tx);
     if (arr(s.interview.turns).length) L.push('', '## Entretien', '', ...s.interview.turns.map((t) => `- **${t.who === 'jury' ? 'Jury' : 'Élève'}** : ${t.text}`));
+    const ma = arr(s.interview.modelAnswers);
+    if (ma.length) {
+      L.push('', '## Réponses modèles (IA, jury)', '');
+      ma.forEach((x) => L.push(`- **${x.question}**`, `  - Attendu : ${str(x.expect).replace(/^\s*attendu\s*:\s*/i, '')}`, `  - Réponse modèle : ${x.model}`));
+    }
     return L.join('\n') + '\n';
   }
 
@@ -1568,6 +1699,7 @@
     C.L = L;
     C.notes = { busy: false, lastAt: Date.now(), newChars: 0, ctrl: null };
     C.q = { busy: false, ctrl: null };
+    C.ja = { busy: false, ctrl: null, req: null, item: null, error: '', noKey: false, question: '', src: '', prev: null, heardLocked: false };
     C.wantsWake = true;
     document.body.classList.add('ex-focus');
     keepAwake(true);
@@ -1603,7 +1735,7 @@
       paintTeamsBar();
       paintClock(C);
       if (s.phase === 'expose') { paintTranscript(); paintChecks(); paintErrors(); }
-      if (s.phase === 'interview') { paintQuestion(); paintTurns(); paintAsked(); }
+      if (s.phase === 'interview') { paintQuestion(); paintJuryAnswer(); paintTurns(); paintAsked(); }
       if ((s.phase === 'expose' || s.phase === 'interview') && L.A.pc === 'unknown') L.probe();
       if (s.phase === 'interview' && !s.interview.current && !C.q.busy) nextQuestion('next', true);
     };
@@ -1632,10 +1764,10 @@
       if (s.phase === 'done' || (s.phase === 'review' && !link)) { bar.innerHTML = ''; bar.hidden = true; return; }
       bar.hidden = false;
       bar.innerHTML = link
-        ? `<span class="ex-teams-ic">${icon('video')}</span><span class="grow small"><b>Réunion Teams</b> <span class="muted ex-teams-url">${esc(link.replace(/^https:\/\//, '').slice(0, 60))}${link.length > 68 ? '…' : ''}</span></span>
+        ? `<span class="ex-teams-ic">${icon('video')}</span><span class="grow small"><b>Réunion ${meetingApp(link)}</b> <span class="muted ex-teams-url">${esc(link.replace(/^https:\/\//, '').slice(0, 60))}${link.length > 68 ? '…' : ''}</span></span>
           <button type="button" class="btn btn-sm" data-act="teams-join">${icon('video')}<span>Rejoindre</span></button>
           <button type="button" class="btn btn-sm" data-act="teams-copy">${icon('copy')}<span class="hide-mobile">Copier pour Audrey</span><span class="show-mobile">Copier</span></button>`
-        : `<span class="ex-teams-ic is-off">${icon('video')}</span><span class="grow small"><b>Pas de lien Teams</b> <span class="muted">· collez le lien de la réunion pour le rejoindre et l’envoyer à Audrey</span></span>
+        : `<span class="ex-teams-ic is-off">${icon('video')}</span><span class="grow small"><b>Pas de lien de réunion</b> <span class="muted">· collez le lien Teams ou Meet pour le rejoindre et l’envoyer à Audrey</span></span>
           <button type="button" class="btn btn-sm" data-act="teams-edit">${icon('plus')}<span>Ajouter le lien</span></button>`;
     }
     function setTeams(value, quiet) {
@@ -1643,9 +1775,9 @@
       const link = teamsValid(v);
       const hint = $('[data-b="teams-hint"]', root);
       const box = $('[data-b="teams"]', root);
-      if (!v) { s.teamsLink = ''; C.saveSoon(); if (hint) hint.textContent = 'Collez le lien reçu (teams.microsoft.com, teams.live.com ou aka.ms).'; if (box) box.classList.remove('is-set', 'is-bad'); paintTeamsBar(); return ''; }
+      if (!v) { s.teamsLink = ''; C.saveSoon(); if (hint) hint.textContent = LINK_HINT; if (box) box.classList.remove('is-set', 'is-bad'); paintTeamsBar(); return ''; }
       if (!link) {
-        if (hint) hint.textContent = 'Ce lien ne ressemble pas à un lien Teams (https://teams.microsoft.com/…, teams.live.com ou aka.ms).';
+        if (hint) hint.textContent = LINK_BAD;
         if (box) { box.classList.add('is-bad'); box.classList.remove('is-set'); }
         return '';
       }
@@ -1654,12 +1786,12 @@
       if (hint) hint.textContent = 'Lien enregistré pour cette séance (et proposé pour la suivante).';
       if (box) { box.classList.add('is-set'); box.classList.remove('is-bad'); }
       paintTeamsBar();
-      if (changed && !quiet) toast('Lien Teams enregistré.', 'ok');
+      if (changed && !quiet) toast(`Lien ${meetingApp(link)} enregistré.`, 'ok');
       return link;
     }
     function teamsCopy() {
       const link = teamsValid(s.teamsLink);
-      if (!link) { toast('Collez d’abord le lien de la réunion Teams.', 'warn'); teamsEdit(); return; }
+      if (!link) { toast('Collez d’abord le lien de la réunion (Teams ou Meet).', 'warn'); teamsEdit(); return; }
       copyText(teamsMessage(link), 'Message pour Audrey (lien + consignes)');
     }
     function teamsEdit() {
@@ -1668,10 +1800,10 @@
       const body = h(`<div class="stack">${teamsFieldHTML(s.teamsLink, { id: 'ex-teams-sheet', copy: false })}</div>`);
       const inp = $('input', body);
       sheet({
-        title: 'Lien de la réunion Teams', body,
+        title: 'Lien de la réunion (Teams ou Meet)', body,
         actions: [{ label: 'Annuler', kind: 'ghost' }, {
           label: 'Enregistrer', kind: 'primary', icon: 'check', close: false,
-          onClick: (ctx) => { if (!inp.value.trim() || setTeams(inp.value)) { if (!inp.value.trim()) setTeams(''); ctx.close('action'); } else toast('Lien Teams invalide.', 'warn'); return false; }
+          onClick: (ctx) => { if (!inp.value.trim() || setTeams(inp.value)) { if (!inp.value.trim()) setTeams(''); ctx.close('action'); } else toast(LINK_BAD, 'warn', { duration: 7000 }); return false; }
         }]
       });
       $('[data-act="teams-join"]', body).addEventListener('click', (e) => { e.stopPropagation(); if (setTeams(inp.value, true)) openTeams(s.teamsLink); else openTeams(inp.value); });
@@ -1689,20 +1821,20 @@
       const dur = Number(s.prep.durMin) || 60;
       const started = !!s.prep.startedAt;
       return `<section class="card card-pad ex-phase">
-        <div class="ex-phase-head"><span class="tile tile-blue">${icon('clock')}</span><div><h2 class="h2">Préparation</h2><p class="muted small">1 h sans dictionnaire, avec le sujet seul. Partagez le sujet dans Teams, puis lancez le chrono.</p></div></div>
+        <div class="ex-phase-head"><span class="tile tile-blue">${icon('clock')}</span><div><h2 class="h2">Préparation</h2><p class="muted small">1 h sans dictionnaire, avec le sujet seul. Partagez le sujet dans l’appel (Teams ou Meet), puis lancez le chrono.</p></div></div>
         <div class="ex-prep-bar" style="--p:0" aria-hidden="true"><i></i></div>
         ${teamsFieldHTML(s.teamsLink, { copy: true, hint: s.teamsLink ? (teamsValid(s.teamsLink) ? 'Dernier lien utilisé, pré-rempli : vérifiez qu’il s’agit bien de la réunion du jour.' : 'Lien invalide.') : undefined })}
         <div class="field"><span class="label">Durée</span>
           <div class="seg" role="radiogroup" aria-label="Durée de préparation">${DURATIONS.map((m) => `<button type="button" role="radio" aria-checked="${m === dur}" class="${m === dur ? 'on' : ''}" data-dur="${m}">${m} min</button>`).join('')}</div></div>
         <div class="ex-actions-row">
-          <button type="button" class="btn btn-lg" data-act="share">${icon('pip')}<span>Partager le sujet dans Teams</span></button>
+          <button type="button" class="btn btn-lg" data-act="share">${icon('pip')}<span>Partager le sujet dans l’appel</span></button>
           <button type="button" class="btn btn-lg" data-act="copy-subject">${icon('copy')}<span>Copier le sujet</span></button>
         </div>
         <div class="ex-actions-row">
           ${started ? `<button type="button" class="btn btn-ghost" data-act="prep-restart">${icon('refresh')}<span>Recommencer le chrono</span></button>` : `<button type="button" class="btn btn-primary btn-xl" data-act="prep-start">${icon('play')}<span>Lancer la préparation</span></button>`}
           <button type="button" class="btn ${started ? 'btn-primary btn-xl' : 'btn-ghost'}" data-act="to-expose">${icon('chevron-right')}<span>Passer à l’exposé</span></button>
         </div>
-        <div class="ex-tip">${icon('lightbulb')}<span>Pendant la préparation : coupez votre micro Teams, vérifiez que vous entendez bien l’élève, relisez le corrigé et choisissez 3 ou 4 questions. Alarme douce à 10 min, 5 min et à la fin.</span></div>
+        <div class="ex-tip">${icon('lightbulb')}<span>Pendant la préparation : coupez votre micro dans l’appel, vérifiez que vous entendez bien l’élève, relisez le corrigé et choisissez 3 ou 4 questions. Alarme douce à 10 min, 5 min et à la fin.</span></div>
       </section>`;
     }
 
@@ -1737,6 +1869,7 @@
         <div class="ex-phase-head"><span class="tile tile-green">${icon('person2')}</span><div><h2 class="h2">Entretien · 15 min</h2><p class="muted small">Vérifier la compréhension, faire préciser, nuancer, ouvrir. L’interaction compte.</p></div>
           ${started ? '' : `<button type="button" class="btn" data-act="interview-start" title="Le chrono démarre aussi à la première question posée">${icon('play')}<span>Démarrer le chrono</span></button>`}</div>
         <div class="ex-qbox" data-b="q" aria-live="polite"></div>
+        <div data-b="janswer" aria-live="polite"></div>
         <div class="ex-kinds" role="group" aria-label="Autre question, par type">
           <span class="small muted ex-kinds-l">Autre question :</span>
           ${Object.keys(KIND_LABEL).map((k) => `<button type="button" class="btn btn-sm" data-kind="${k}">${k === 'next' ? icon('refresh') : ''}<span>${KIND_LABEL[k]}</span></button>`).join('')}
@@ -1804,7 +1937,7 @@
         : `<p class="small muted">${aiReady() ? 'Les fautes de langue apparaissent ici pendant l’exposé (analyse toutes les ~35 s de parole).' : 'Notez les fautes dans « Notes du jury ».'}</p>`;
     }
 
-    C.onHeard = (role, text) => {
+    C.onHeard = (role, text, ev) => {
       if (!text) return;
       L.A.interim = '';
       const phase = (s.phase === 'expose' || s.phase === 'interview') ? s.phase : C.drainPhase;
@@ -1817,6 +1950,8 @@
       } else if (phase === 'interview') {
         s.interview.turns.push({ who: role, text, t: s.interview.startedAt ? Date.now() - s.interview.startedAt : 0 });
         paintTurns();
+        // Réponse attendue : seulement une question dite dans le micro du jury (voix séparées), jamais l'élève ni un micro mêlé.
+        if (role === 'jury' && ev && ev.who === 'me' && L.split() && phase === s.phase) juryHeard(text);
       } else return;
       C.saveSoon();
     };
@@ -1863,7 +1998,69 @@
             ? `<button type="button" class="btn btn-primary" data-act="q-next">${icon('chevron-right')}<span>Question suivante</span><span class="kbd">Espace</span></button>`
             : `<button type="button" class="btn btn-primary" data-act="mark-asked">${icon('check')}<span>Marquer comme posée</span><span class="kbd">Espace</span></button>`}
           <button type="button" class="btn" data-act="read-q">${icon('speaker')}<span>Lire à voix haute</span><span class="kbd">L</span></button>
+          <button type="button" class="btn" data-act="q-model">${icon('sparkles')}<span>Réponse modèle</span></button>
         </div>`;
+    }
+
+    /* --- Entretien : réponse attendue (IA), réservée au jury --- */
+    function juryHeard(text) {
+      const now = Date.now();
+      const prev = C.ja.prev;
+      C.ja.prev = { text, at: now };
+      let isQ = false;
+      try { isQ = aiHas('isJuryQuestion') ? !!S.examAI.isJuryQuestion(text) : /\?\s*$/.test(text); } catch (e) { isQ = false; }
+      if (!isQ || !aiReady()) return;
+      // Phrase précédente du jury (moins de 8 s) : souvent le début de la même question.
+      askModel(prev && now - prev.at < 8000 ? prev.text + ' ' + text : text, 'heard');
+    }
+    async function askModel(question, src) {
+      // Question entendue : même ouverture que l'aide en direct de l'appel (S.examLock, heure du serveur).
+      if (src === 'heard') {
+        let st = null;
+        try { st = await S.examLock.check(); } catch (e) { st = null; }
+        if (!C.alive) return;
+        C.ja.heardLocked = !(st && st.open === true);
+        if (C.ja.heardLocked) { paintJuryAnswer(); return; }
+      }
+      if (C.ja.ctrl) C.ja.ctrl.abort();
+      const req = {};
+      Object.assign(C.ja, { req, ctrl: null, busy: false, item: null, error: '', noKey: false, question, src });
+      if (!aiHas('juryAnswer')) { C.ja.error = 'Réponse modèle indisponible : rechargez la page (Souffleur vient d’être mis à jour).'; paintJuryAnswer(); return; }
+      if (!aiReady()) { C.ja.error = 'Pas de clé IA : ajoutez-en une dans Réglages.'; C.ja.noKey = true; paintJuryAnswer(); return; }
+      const ctrl = C.ja.ctrl = new AbortController();
+      C.ja.busy = true;
+      paintJuryAnswer();
+      try {
+        const r = await S.examAI.juryAnswer({ subject: s.subject, question, expose: exposeText(s), turns: arr(s.interview.turns).slice(-12).map((t) => ({ who: t.who, text: t.text })), signal: ctrl.signal });
+        if (C.ja.req !== req || !C.alive) return;
+        const item = { question, expect: str(r && r.expect).trim(), model: str(r && r.model).trim(), at: nowIso() };
+        if (!item.expect && !item.model) throw new Error('Réponse vide de l’IA — réessayez.');
+        s.interview.modelAnswers = arr(s.interview.modelAnswers).concat(item).slice(-40);
+        C.ja.item = item;
+        C.saveSoon();
+      } catch (e) {
+        if (C.ja.req !== req || isAbort(e)) return;
+        C.ja.noKey = !!(e && e.code === 'NO_KEY');
+        C.ja.error = C.ja.noKey ? 'Pas de clé IA : ajoutez-en une dans Réglages.' : errMsg(e);
+      } finally {
+        if (C.ja.req === req) { C.ja.busy = false; C.ja.ctrl = null; if (C.alive) paintJuryAnswer(); }
+      }
+    }
+    function paintJuryAnswer() {
+      const box = $('[data-b="janswer"]', root);
+      if (!box) return;
+      const j = C.ja;
+      const note = j.heardLocked ? `<p class="muted small ex-janswer-lock">${esc(HEARD_LOCK_NOTE)}</p>` : '';
+      if (!j.question) { box.innerHTML = note; return; }
+      const expect = j.item ? j.item.expect.replace(/^\s*attendu\s*:\s*/i, '') : '';
+      box.innerHTML = `<section class="ex-janswer${j.error ? ' is-err' : ''}" aria-busy="${j.busy}">
+        <div class="ex-janswer-head">${icon('sparkles')}<b>Réponse attendue (IA)</b><span class="pill pill-xs">Pour le jury</span></div>
+        <p class="ex-janswer-q"><span class="muted">${j.src === 'heard' ? 'Question entendue' : 'Question proposée'} :</span> <span lang="en">${esc(j.question)}</span></p>
+        ${j.busy ? '<div class="ex-q-loading"><span class="spinner"></span><span>Je prépare la réponse attendue…</span></div>' : ''}
+        ${j.error ? `<p class="ex-janswer-err">${esc(j.error)}</p><div class="row">${j.noKey ? `<button type="button" class="btn btn-sm" data-go="#/settings">${icon('gear')}<span>Réglages</span></button>` : ''}<button type="button" class="btn btn-sm" data-act="ja-retry">${icon('refresh')}<span>Réessayer</span></button></div>` : ''}
+        ${j.item && expect ? `<p class="ex-janswer-exp"><b>Attendu :</b> ${esc(expect)}</p>` : ''}
+        ${j.item && j.item.model ? `<p class="ex-janswer-model"><b>Réponse modèle :</b> <span lang="en">${esc(j.item.model)}</span></p>` : ''}
+      </section>${note}`;
     }
     function readQuestion() {
       const q = s.interview.current;
@@ -1943,7 +2140,7 @@
       if (!s.interview.startedAt) { s.interview.startedAt = Date.now(); const b = $('[data-act="interview-start"]', root); if (b) b.remove(); paintClock(C); }
       s.interview.asked.push({ en: q.en, fr: q.fr || '', why: q.why || '', expect: q.expect || '', t: Date.now() - s.interview.startedAt });
       // Si le son du jury n'est pas transcrit (micro seul), la question posée entre dans les échanges.
-      if (L.A.preset !== 'pc-interne' || !L.A.on) s.interview.turns.push({ who: 'jury', text: q.en, t: Date.now() - s.interview.startedAt });
+      if (!L.split() || !L.A.on) s.interview.turns.push({ who: 'jury', text: q.en, t: Date.now() - s.interview.startedAt });
       C.saveSoon();
       // La question reste affichée (avec « Pourquoi · attendu ») pendant que l'élève répond ; « Question suivante » quand vous voulez.
       paintQuestion(); paintAsked(); paintTurns();
@@ -1953,9 +2150,9 @@
     function menuSheet() {
       const body = h(`<div class="list">
         <button type="button" class="list-row" data-m="share"><span class="tile tile-blue">${icon('pip')}</span><span class="list-main"><b>Ouvrir le sujet à partager</b><small>Fenêtre propre, sans corrigé</small></span></button>
-        <button type="button" class="list-row" data-m="copy"><span class="tile tile-teal">${icon('copy')}</span><span class="list-main"><b>Copier le sujet</b><small>Texte brut pour le chat Teams</small></span></button>
+        <button type="button" class="list-row" data-m="copy"><span class="tile tile-teal">${icon('copy')}</span><span class="list-main"><b>Copier le sujet</b><small>Texte brut pour le chat de l’appel</small></span></button>
         <button type="button" class="list-row" data-m="export"><span class="tile tile-green">${icon('download')}</span><span class="list-main"><b>Exporter la séance (.md)</b></span></button>
-        <button type="button" class="list-row" data-m="teams"><span class="tile tile-blue">${icon('video')}</span><span class="list-main"><b>Lien de la réunion Teams</b><small>${teamsValid(s.teamsLink) ? 'Modifier le lien' : 'Ajouter le lien'}</small></span></button>
+        <button type="button" class="list-row" data-m="teams"><span class="tile tile-blue">${icon('video')}</span><span class="list-main"><b>Lien de la réunion (Teams ou Meet)</b><small>${teamsValid(s.teamsLink) ? 'Modifier le lien' : 'Ajouter le lien'}</small></span></button>
         <button type="button" class="list-row" data-m="keys"><span class="tile tile-gray">${icon('keyboard')}</span><span class="list-main"><b>Raccourcis clavier</b><small>Espace : posée, puis suivante · N : notes · L : lire</small></span></button>
         <button type="button" class="list-row" data-m="delete"><span class="tile tile-red">${icon('trash')}</span><span class="list-main"><b>Supprimer la séance</b></span></button>
       </div>`);
@@ -2009,7 +2206,7 @@
       else if (act === 'teams-join') {
         const f = $('[data-f="teams"]', root);
         if (f && f.value.trim() && f.value.trim() !== s.teamsLink) setTeams(f.value, true);
-        if (teamsValid(s.teamsLink)) openTeams(s.teamsLink); else if (f && f.value.trim()) openTeams(f.value); else { toast('Collez d’abord le lien de la réunion Teams.', 'warn'); teamsEdit(); }
+        if (teamsValid(s.teamsLink)) openTeams(s.teamsLink); else if (f && f.value.trim()) openTeams(f.value); else { toast('Collez d’abord le lien de la réunion (Teams ou Meet).', 'warn'); teamsEdit(); }
       }
       else if (act === 'teams-copy') {
         const f = $('[data-f="teams"]', root);
@@ -2046,6 +2243,8 @@
       else if (act === 'mark-asked') markAsked();
       else if (act === 'q-next') nextQuestion('next', true);
       else if (act === 'read-q') readQuestion();
+      else if (act === 'q-model') { if (s.interview.current) askModel(s.interview.current.en, 'suggested'); }
+      else if (act === 'ja-retry') { if (C.ja.question) askModel(C.ja.question, C.ja.src); }
       else if (act === 'to-review') {
         const ms = durations(s).interviewMs;
         const short = s.interview.startedAt && ms < 15 * 60000;
@@ -2071,7 +2270,7 @@
       if (!f) return;
       const ok = setTeams(f.value, true);
       if (ok && f.value !== ok) f.value = ok;
-      if (ok && ok !== C.teamsAnnounced) { C.teamsAnnounced = ok; toast('Lien Teams enregistré : « Rejoindre » ou « Copier pour Audrey ».', 'ok'); }
+      if (ok && ok !== C.teamsAnnounced) { C.teamsAnnounced = ok; toast(`Lien ${meetingApp(ok)} enregistré : « Rejoindre » ou « Copier pour Audrey ».`, 'ok'); }
     });
 
     const offTick = onTick(() => {
@@ -2110,6 +2309,7 @@
         offTick();
         if (C.notes.ctrl) C.notes.ctrl.abort();
         if (C.q.ctrl) C.q.ctrl.abort();
+        if (C.ja.ctrl) C.ja.ctrl.abort();
         if (C.evalCtrl) C.evalCtrl.abort();
         if (!C.deleted) { s.lastSeenAt = Date.now(); C.saveNow(); }
         // Sans attendre la vidange : l'écran suivant s'affiche tout de suite.
@@ -2121,7 +2321,7 @@
   function shareSubject(subject) {
     const url = location.href.split('#')[0] + '#/sujet/' + encodeURIComponent(subject.id);
     const w = window.open(url, 'souffleur-sujet', 'popup=yes,width=980,height=900');
-    if (w) { try { w.focus(); } catch (e) { /* rien */ } toast('Sujet ouvert : dans Teams, « Partager » puis choisissez cette fenêtre.', 'ok', { duration: 7000 }); }
+    if (w) { try { w.focus(); } catch (e) { /* rien */ } toast('Sujet ouvert : dans Teams ou Meet, « Partager » puis choisissez cette fenêtre.', 'ok', { duration: 7000 }); }
     else toast('Fenêtre bloquée par le navigateur : autorisez les fenêtres pop-up, ou utilisez « Copier le sujet ».', 'warn', { duration: 8000 });
   }
 
@@ -2715,9 +2915,9 @@
         const e = s.evaluation;
         return `<div class="list-row ex-hrow">
           <button type="button" class="ex-hopen" data-open="${esc(s.id)}">
-            <span class="tile ${s.kind === 'jury' ? 'tile-blue' : 'tile-violet'}">${icon(s.kind === 'jury' ? 'person2' : 'graduation')}</span>
-            <span class="list-main"><b lang="en">${esc(s.subject.title)}</b><small>${esc(fmtDate(s.createdAt, true))} · ${s.kind === 'jury' ? 'Jury' : 'Solo'} · ${e ? 'bilan' : esc(phaseLabel(s))}</small></span>
-            ${e ? `<span class="ex-hnote ${e.total >= 12 ? 'ok' : e.total >= 10 ? 'warn' : 'err'}">${fmtNum(e.total)}<small>/20</small></span>` : '<span class="pill pill-xs">En cours</span>'}
+            <span class="tile ${s.kind === 'jury' ? 'tile-blue' : s.kind === 'call' ? 'tile-teal' : 'tile-violet'}">${icon(s.kind === 'jury' ? 'person2' : s.kind === 'call' ? 'video' : 'graduation')}</span>
+            <span class="list-main"><b lang="en">${esc(s.subject.title)}</b><small>${esc(fmtDate(s.createdAt, true))} · ${esc(kindLabel(s))} · ${e ? 'bilan' : esc(phaseLabel(s))}</small></span>
+            ${e ? `<span class="ex-hnote ${e.total >= 12 ? 'ok' : e.total >= 10 ? 'warn' : 'err'}">${fmtNum(e.total)}<small>/20</small></span>` : s.kind === 'call' ? `<span class="pill pill-xs">${callCountLabel(s)}</span>` : '<span class="pill pill-xs">En cours</span>'}
           </button>
           <button type="button" class="icon-btn icon-btn-sm" data-del="${esc(s.id)}" aria-label="Supprimer cette séance" title="Supprimer">${icon('trash')}</button>
         </div>`;
@@ -2725,7 +2925,7 @@
     </div>`;
     root.addEventListener('click', async (e) => {
       const o = e.target.closest('[data-open]');
-      if (o) { const s = store.get(o.dataset.open); if (s) go((s.kind === 'jury' ? '#/oral/' : '#/eleve/') + s.id); return; }
+      if (o) { const s = store.get(o.dataset.open); if (s) go(sessionHash(s)); return; }
       const d = e.target.closest('[data-del]');
       if (d && await confirmSheet({ title: 'Supprimer cette séance ?', text: 'La transcription, les notes et le bilan seront effacés.', okLabel: 'Supprimer', danger: true })) {
         store.remove(d.dataset.del);
@@ -2736,6 +2936,382 @@
     });
     markTab('home');
     setCurrent({});
+  }
+
+  /* ====================================================================== *
+   *  Écran : appel d'entraînement Teams ou Meet ('appel')
+   *  Réponse IA, traduction, mots clés et fenêtre flottante suivent S.examLock (heure du serveur).
+   * ====================================================================== */
+  const LOCK_TITLE = 'Disponible à partir du jeudi 12 novembre à 14 h';
+  const LOCK_TEXT = 'L’oral officiel était prévu jeudi 12 novembre à 10 h. Le logiciel ne distingue pas un appel d’entraînement de l’oral à distance : l’aide en direct s’ouvre donc ce jour-là à 14 h. D’ici là, le jury IA corrige chaque réponse juste après.';
+  const NO_KEY_LIVE = 'Pas de clé IA : ajoutez-en une dans Réglages.';
+  const OLD_AI = 'Aide en direct indisponible : rechargez la page (Souffleur vient d’être mis à jour).';
+  const JOIN_MS = 8000;
+
+  function copyStylesTo(doc) {
+    $$('style, link[rel="stylesheet"]').forEach((n) => {
+      let css = '';
+      if (n.tagName === 'LINK') { try { css = Array.from(n.sheet.cssRules).map((r) => r.cssText).join('\n'); } catch (e) { css = ''; } }
+      else css = n.textContent;
+      if (css) { const st = doc.createElement('style'); st.textContent = css; doc.head.appendChild(st); }
+      else if (n.href) { const l = doc.createElement('link'); l.rel = 'stylesheet'; l.href = n.href; doc.head.appendChild(l); }
+    });
+  }
+
+  function renderCall(root, s) {
+    const C = baseController(root, s);
+    const call = s.call;
+    // item : réponse affichée (en cours ou finie) ; req : jeton de la seule requête qui a le droit de peindre.
+    const R = { lock: null, ctrl: null, req: null, item: null, busy: false, partial: '', float: null, jury: [], checkedAt: 0 };
+    const L = createListen(C, {
+      call: true, prefKey: 'callListenPreset',
+      roleOf: (who, split) => (split ? (who === 'me' ? 'student' : 'jury') : 'mixed'),
+      interimRoles: ['jury', 'mixed'],
+      onStop: () => { closeFloat(); C.wantsWake = false; keepAwake(false); if (C.alive) paintLive(); }
+    });
+    C.L = L;
+    const isOpen = () => !!(R.lock && R.lock.open);
+    const isQ = (t) => { try { return aiHas('isJuryQuestion') ? !!S.examAI.isJuryQuestion(t) : /\?\s*$/.test(t); } catch (e) { return false; } };
+    const shown = () => R.item || call.answers[call.answers.length - 1] || null;
+    document.body.classList.add('ex-focus');
+
+    root.innerHTML = `<div class="screen ex ex-call">
+      ${topbar({ title: 'Appel d’entraînement', sub: s.subject.title, back: '#/' })}
+      <div class="ex-call-grid">
+        <div class="ex-call-col">
+          <section class="card card-pad ex-live" data-b="live" aria-live="polite"></section>
+          <section class="card card-pad ex-call-hist">
+            <div class="card-head"><h2 class="h3">Historique de l’appel</h2><span class="spacer"></span><span class="badge" data-b="hist-n">0</span></div>
+            <div data-b="hist"></div>
+            <div class="ex-actions-row">
+              <button type="button" class="btn" data-act="export">${icon('download')}<span>Exporter (.md)</span></button>
+              <button type="button" class="btn" data-act="end">${icon('stop')}<span>Terminer l’appel</span></button>
+            </div>
+          </section>
+        </div>
+        <div class="ex-call-col">
+          <section class="card card-pad ex-call-meet">
+            <div class="card-head"><h2 class="h3">Réunion</h2></div>
+            ${teamsFieldHTML(s.teamsLink, { id: 'ex-call-link', joinLabel: 'Ouvrir', hint: s.teamsLink ? 'Lien enregistré pour cet appel.' : undefined })}
+          </section>
+          <section class="card card-pad ex-call-listen">
+            <div class="card-head"><h2 class="h3">Écoute</h2></div>
+            <div data-b="listen"></div>
+          </section>
+          <details class="card card-pad ex-details ex-call-subject"><summary><b>Sujet</b><span class="small muted" lang="en"> · ${esc(s.subject.title)}</span></summary>${subjectHTML(s.subject)}</details>
+        </div>
+      </div>
+    </div>`;
+
+    /* --- Panneau en direct (repris tel quel dans la fenêtre flottante) --- */
+    function liveHTML(float) {
+      if (!R.lock) return `<div class="ex-live-wait"><span class="spinner"></span><span>Vérification de la date sur le serveur…</span></div>`;
+      if (!isOpen()) {
+        return `<div class="ex-lock">
+          <span class="ex-lock-ic">${icon('lock')}</span>
+          <div class="ex-lock-t"><h2 class="h2">${LOCK_TITLE}</h2><p>${LOCK_TEXT}</p>
+            <div class="ex-actions-row"><button type="button" class="btn btn-primary" data-go="#/eleve">${icon('person2')}<span>S’entraîner avec le jury IA</span></button></div></div>
+        </div>`;
+      }
+      const a = shown();
+      const live = R.busy && R.item === a;
+      const head = `<div class="ex-live-head"><span class="ex-live-dot${L.A.on ? ' on' : ''}" aria-hidden="true"></span><b>${L.A.on ? 'En direct' : 'Écoute arrêtée'}</b>${live ? '<span class="pill pill-xs pill-accent">Réponse en cours…</span>' : ''}</div>`;
+      const interim = `<p class="ex-live-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>`;
+      if (!a) {
+        const msg = !aiHas('liveAnswer') ? OLD_AI : L.A.on ? 'J’écoute l’appel : la question du jury et une réponse s’affichent ici.' : 'Lancez l’écoute (carte « Écoute »), puis rejoignez l’appel : la question du jury et une réponse s’affichent ici.';
+        return `${head}<p class="ex-live-empty">${esc(msg)}</p>${interim}`;
+      }
+      return `${head}
+        <div class="ex-live-q"><span class="ex-live-l">Question du jury</span><p class="ex-live-en" lang="en">${esc(a.question)}</p><p class="ex-live-fr" data-b="fr">${esc(a.fr)}</p></div>
+        <div class="ex-live-a"><span class="ex-live-l">Réponse IA</span>
+          <p class="ex-live-ans${live ? ' is-streaming' : ''}" lang="en" data-b="ans">${esc(live ? R.partial : a.text)}</p>
+          ${!live && arr(a.keyWords).length ? `<div class="ex-live-kw" lang="en" aria-label="Mots clés">${a.keyWords.map((k) => `<span class="pill">${esc(k)}</span>`).join('')}</div>` : ''}
+          ${!live && a.error ? `<p class="ex-live-err" role="alert">${esc(a.error)}${a.error === NO_KEY_LIVE && !float ? ` <button type="button" class="btn btn-quiet btn-sm" data-go="#/settings">Réglages</button>` : ''}</p>` : ''}
+        </div>
+        <div class="ex-live-actions">
+          <button type="button" class="btn btn-sm" data-act="shorter">${icon('text-size')}<span>Plus court</span></button>
+          <button type="button" class="btn btn-sm" data-act="retry">${icon('refresh')}<span>Réessayer</span></button>
+          ${float ? '' : `<button type="button" class="btn btn-sm${R.float ? ' on' : ''}" data-act="float"${L.A.on ? '' : ' disabled'} title="${L.A.on ? 'Garder la réponse au premier plan pendant l’appel' : 'Disponible pendant l’écoute'}">${icon('pip')}<span>Fenêtre flottante</span></button>`}
+        </div>${interim}`;
+    }
+    const views = () => [root].concat(R.float ? [R.float.box] : []);
+    function paintLive() {
+      if (!C.alive) return;
+      const box = $('[data-b="live"]', root);
+      box.classList.toggle('is-locked', !!R.lock && !isOpen());
+      box.innerHTML = liveHTML(false);
+      if (R.float) { if (isOpen()) R.float.box.innerHTML = liveHTML(true); else closeFloat(); }
+    }
+    function paintAnswer() { views().forEach((v) => { const el = $('[data-b="ans"]', v); if (el) el.textContent = R.partial; }); }
+    C.paintInterim = () => { views().forEach((v) => { const el = $('[data-b="interim"]', v); if (el) el.textContent = isOpen() ? L.A.interim : ''; }); };
+    C.paintListen = () => {
+      const b = $('[data-b="listen"]', root);
+      if (b) b.innerHTML = listenHTML(L.A, { startLabel: 'Écouter l’appel', onLabel: 'J’écoute l’appel (en-GB)', blocked: !R.lock ? 'Vérification de la date…' : isOpen() ? '' : LOCK_TITLE + '.' });
+      paintLive();
+    };
+    function paintHist() {
+      if (!C.alive) return;
+      const box = $('[data-b="hist"]', root);
+      const list = isOpen() ? call.answers : [];
+      $('[data-b="hist-n"]', root).textContent = list.length;
+      const cur = shown();
+      box.innerHTML = list.length ? `<ol class="ex-chist">${list.slice().reverse().map((a) => `<li class="ex-chist-item${a === cur ? ' is-current' : ''}" data-id="${esc(a.id)}">
+          <p class="ex-chist-q" lang="en">${esc(a.question)}</p>
+          ${a.fr ? `<p class="ex-chist-fr">${esc(a.fr)}</p>` : ''}
+          ${a.text ? `<p class="ex-chist-a"><span class="ex-chist-l">Réponse IA</span><span lang="en">${esc(a.text)}</span></p>` : a.error ? `<p class="ex-chist-err">${esc(a.error)}</p>` : R.busy && R.item === a ? '<p class="small muted">Réponse en cours…</p>' : ''}
+          ${a.mine ? `<p class="ex-chist-mine"><span class="ex-chist-l">Ce que j’ai dit</span><span lang="en">${esc(a.mine)}</span></p>` : ''}
+        </li>`).join('')}</ol>`
+        : `<p class="small muted">${isOpen() ? 'Les questions du jury, les réponses IA et ce que vous avez dit s’affichent ici.' : 'L’historique se remplit pendant l’appel, avec l’aide en direct.'}</p>`;
+    }
+
+    /* --- Verrou (heure du serveur) --- */
+    function applyLock(st) {
+      const was = R.lock;
+      R.lock = st;
+      if (!st.open) {
+        if (R.ctrl) R.ctrl.abort();
+        Object.assign(R, { req: null, ctrl: null, item: null, busy: false, partial: '' });
+        if (L.A.on || L.A.starting) L.stop({ drainMs: 0 });
+        closeFloat();
+      }
+      if (C.alive && (!was || was.open !== st.open)) { C.paintListen(); paintHist(); }
+      return st.open;
+    }
+    const recheck = () => S.examLock.check().then((st) => (C.alive ? applyLock(st) : false));
+
+    /* --- Réponse IA en direct : une seule requête à la fois --- */
+    function callExpose() {
+      const out = [];
+      for (const t of call.turns) { if (t.who === 'jury') break; out.push(t.text); }
+      return out.join(' ').slice(-6000);
+    }
+    async function ask(question, o) {
+      o = o || {};
+      const prev = R.item;
+      if (R.ctrl) R.ctrl.abort();
+      let item = o.item;
+      if (!item) {
+        // Question encore sans réponse : remplacée si la nouvelle la reprend (fenêtre de 8 s), sinon marquée interrompue.
+        if (prev && R.busy) {
+          if (question.includes(prev.question)) call.answers = call.answers.filter((x) => x !== prev);
+          else if (!prev.text) prev.error = 'Interrompue par la question suivante.';
+        }
+        item = { id: 'a-' + uid(), question, fr: '', text: '', keyWords: [], mine: '', at: nowIso(), skipped: false, error: '' };
+        call.answers.push(item);
+        if (call.answers.length > 60) call.answers.splice(0, call.answers.length - 60);
+      }
+      const born = Date.now();
+      const req = {};
+      const ctrl = new AbortController();
+      Object.assign(R, { req, ctrl, item, busy: true, partial: '' });
+      item.error = '';
+      paintLive(); paintHist();
+      const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
+      const st = await S.examLock.check();
+      if (R.req !== req || !C.alive) return;
+      if (!st.open) { drop(); applyLock(st); C.saveSoon(); return; }
+      try {
+        if (!aiHas('liveAnswer')) throw new Error(OLD_AI);
+        if (!item.fr && aiHas('translate')) {
+          S.examAI.translate(question, { to: 'fr', signal: ctrl.signal }).then((fr) => {
+            fr = str(fr).trim();
+            if (!fr || !C.alive || !call.answers.includes(item)) return;
+            item.fr = fr; C.saveSoon();
+            if (shown() === item) views().forEach((v) => { const el = $('[data-b="fr"]', v); if (el) el.textContent = fr; });
+            paintHist();
+          }).catch(() => { /* la traduction reste facultative */ });
+        }
+        const r = await S.examAI.liveAnswer({
+          subject: s.subject, question, expose: callExpose(), shorter: !!o.shorter, signal: ctrl.signal,
+          turns: call.turns.slice(-16).map((t) => ({ who: t.who, text: t.text })),
+          onDelta: (t) => { if (R.req === req && C.alive) { R.partial = str(t); paintAnswer(); } }
+        });
+        if (R.req !== req || !C.alive) return;
+        if (r && r.skip) {
+          // Bonjour, test du son… : rien à afficher, et ces phrases ne se joignent pas à la question suivante.
+          // La traduction lancée en parallèle ne sert plus : elle est annulée.
+          ctrl.abort();
+          drop();
+          R.jury = R.jury.filter((x) => x.at > born);
+          return;
+        }
+        const text = str(r && r.text).trim();
+        if (!text) throw new Error('Réponse vide de l’IA — réessayez.');
+        item.text = text;
+        item.keyWords = arr(r.keyWords).map(str).map((k) => k.trim()).filter(Boolean).slice(0, 8);
+        // Question traitée : elle ne se joint plus à la suivante (« Can you hear me? » juste après, par exemple).
+        R.jury = R.jury.filter((x) => x.at > born);
+      } catch (e) {
+        if (R.req !== req || !C.alive || isAbort(e)) return;
+        if (e && e.code === 'LOCKED') { drop(); applyLock({ open: false, source: 'server', now: Date.now() }); return; }
+        item.error = e && e.code === 'NO_KEY' ? NO_KEY_LIVE : errMsg(e);
+      } finally {
+        if (R.req === req) { Object.assign(R, { busy: false, ctrl: null, partial: '' }); if (C.alive) { paintLive(); paintHist(); } }
+        C.saveSoon();
+      }
+    }
+
+    C.onHeard = (role, text) => {
+      if (!text || !C.alive || !isOpen()) return;
+      L.A.interim = '';
+      C.paintInterim();
+      const now = Date.now();
+      if (!call.startedAt) call.startedAt = now;
+      const q = isQ(text);
+      const jury = role === 'jury' || (role === 'mixed' && q);
+      call.turns.push({ who: jury ? 'jury' : 'student', text, t: now - call.startedAt });
+      if (call.turns.length > 400) call.turns.splice(0, call.turns.length - 400);
+      if (jury) {
+        R.jury = R.jury.filter((x) => now - x.at < JOIN_MS).concat({ text, at: now });
+        if (q) ask(R.jury.map((x) => x.text).join(' '));
+      } else {
+        const a = shown();
+        if (a) { a.mine = (a.mine ? a.mine + ' ' : '') + text; paintHist(); }
+      }
+      C.saveSoon();
+    };
+
+    async function startListen() {
+      if (L.A.on || L.A.starting) return;
+      const ok = await recheck();
+      if (!C.alive) return;
+      if (!ok) { toast(`${LOCK_TITLE} : l’écoute de l’appel reste fermée d’ici là.`, 'warn', { duration: 7000 }); return; }
+      call.endedAt = null;
+      await L.start();
+      if (L.A.on && !call.startedAt) call.startedAt = Date.now();
+      C.saveSoon();
+      paintLive();
+    }
+    async function endCall() {
+      if (L.A.on || L.A.starting) await L.stop({ drainMs: 0 });
+      if (R.ctrl) R.ctrl.abort();
+      Object.assign(R, { req: null, ctrl: null, busy: false, partial: '' });
+      call.endedAt = Date.now();
+      C.saveNow();
+      paintLive(); paintHist();
+      toast('Appel terminé : questions et réponses restent dans l’historique (export .md possible).', 'ok', { duration: 6000 });
+    }
+
+    /* --- Fenêtre flottante : Document Picture-in-Picture, repli fenêtre pop-up --- */
+    function toggleFloat() {
+      if (R.float) { closeFloat(); paintLive(); return; }
+      if (!isOpen() || !L.A.on) { toast('Lancez d’abord l’écoute : la fenêtre flottante suit l’appel en direct.', 'info'); return; }
+      // Aucun await avant requestWindow : l'appel doit rester dans le geste de l'utilisateur.
+      const pip = window.documentPictureInPicture;
+      let req = null;
+      if (pip && typeof pip.requestWindow === 'function') { try { req = pip.requestWindow({ width: 420, height: 520 }); } catch (e) { req = null; } }
+      if (req) req.then(setupFloat, () => floatPopup());
+      else floatPopup();
+    }
+    function floatPopup() {
+      let w = null;
+      try { w = window.open('', 'souffleur-appel', 'popup=yes,width=420,height=560'); } catch (e) { w = null; }
+      if (!w) { toast('Fenêtre flottante bloquée : autorisez les fenêtres pop-up pour ce site, ou utilisez Chrome ou Edge récent.', 'warn', { duration: 9000 }); return; }
+      try {
+        w.document.open();
+        w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Souffleur · appel</title></head><body></body></html>');
+        w.document.close();
+      } catch (e) { /* rien */ }
+      setupFloat(w);
+    }
+    function setupFloat(w) {
+      if (!C.alive || !isOpen() || !L.A.on) { try { w.close(); } catch (e) { /* rien */ } return; }
+      const doc = w.document;
+      try { doc.title = 'Souffleur · appel'; } catch (e) { /* rien */ }
+      copyStylesTo(doc);
+      doc.documentElement.lang = 'fr';
+      if (document.documentElement.dataset.theme) doc.documentElement.dataset.theme = document.documentElement.dataset.theme;
+      const scale = document.documentElement.style.getPropertyValue('--font-scale');
+      if (scale) doc.documentElement.style.setProperty('--font-scale', scale);
+      doc.body.className = 'pip-body ex-float-body';
+      doc.body.innerHTML = '<div class="ex-float"><section class="ex-live" data-b="float" aria-live="polite"></section></div>';
+      R.float = { win: w, box: doc.querySelector('[data-b="float"]') };
+      doc.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAct(b.dataset.act); });
+      const gone = () => { if (R.float && R.float.win === w) { R.float = null; if (C.alive) paintLive(); } };
+      w.addEventListener('pagehide', gone);
+      w.addEventListener('unload', gone);
+      paintLive();
+    }
+    function closeFloat() {
+      const f = R.float;
+      if (!f) return;
+      R.float = null;
+      try { f.win.close(); } catch (e) { /* rien */ }
+    }
+
+    /* --- Lien de la réunion --- */
+    function setLink(value, announce) {
+      const v = str(value).trim();
+      const link = teamsValid(v);
+      const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root);
+      if (box) { box.classList.toggle('is-set', !!link); box.classList.toggle('is-bad', !link && !!v); }
+      if (hint) hint.textContent = link ? `Lien ${meetingApp(link)} enregistré pour cet appel.` : v ? LINK_BAD : LINK_HINT;
+      if (link && link !== s.teamsLink) {
+        s.teamsLink = link; setPrefs({ studentTeams: link }); C.saveSoon();
+        if (announce) toast(`Lien ${meetingApp(link)} enregistré.`, 'ok');
+      }
+      return link;
+    }
+
+    function onAct(act) {
+      if (act === 'listen-start') startListen();
+      else if (act === 'listen-stop') L.stop().then(() => toast('Écoute arrêtée.', 'info'));
+      else if (act === 'shorter' || act === 'retry') { const a = shown(); if (a && isOpen()) ask(a.question, { item: a, shorter: act === 'shorter' }); }
+      else if (act === 'float') toggleFloat();
+      else if (act === 'export') downloadText(exportMd(s), `appel-entrainement-${s.createdAt.slice(0, 10)}.md`);
+      else if (act === 'end') endCall();
+      else if (act === 'teams-join') {
+        const f = $('[data-f="teams"]', root);
+        const v = f ? f.value.trim() : '';
+        if (!v) { toast('Collez d’abord le lien Teams ou Meet de l’appel.', 'warn'); if (f) f.focus(); return; }
+        const link = setLink(v);
+        if (link && f) f.value = link;
+        openTeams(v);
+      }
+    }
+    root.addEventListener('click', (e) => {
+      const src = e.target.closest('[data-src]');
+      if (src && !src.disabled) { L.A.preset = src.dataset.src; setPrefs({ callListenPreset: L.A.preset }); C.paintListen(); return; }
+      const b = e.target.closest('[data-act]');
+      if (b && !b.disabled) onAct(b.dataset.act);
+    });
+    root.addEventListener('input', (e) => { const f = e.target.closest && e.target.closest('[data-f="teams"]'); if (f && teamsValid(f.value)) setLink(f.value); });
+    root.addEventListener('change', (e) => {
+      const f = e.target.closest && e.target.closest('[data-f="teams"]');
+      if (!f) return;
+      const link = setLink(f.value, true);
+      if (link && f.value !== link) f.value = link;
+    });
+
+    // Verrouillé : on revérifie chaque minute (l'heure du serveur avance avec l'horloge monotone du navigateur).
+    const offTick = onTick(() => {
+      if (!C.alive || !R.lock || R.lock.open || Date.now() - R.checkedAt < 60000) return;
+      R.checkedAt = Date.now();
+      recheck();
+    });
+
+    C.paintListen();
+    paintHist();
+    L.probe();
+    recheck();
+    markTab('home');
+    setCurrent({
+      get wantsWake() { return L.A.on || L.A.starting; },
+      flush() { C.saveNow(); },
+      busy() { return L.A.on || L.A.starting; },
+      async canLeave() {
+        if (!L.A.on && !L.A.starting) return true;
+        return confirmSheet({ title: 'Quitter l’appel ?', text: 'L’écoute de l’appel est active : elle sera arrêtée. Questions et réponses restent enregistrées.', okLabel: 'Quitter', cancelLabel: 'Rester' });
+      },
+      leave() {
+        C.alive = false;
+        offTick();
+        if (R.ctrl) R.ctrl.abort();
+        closeFloat();
+        C.saveNow();
+        L.stop({ drainMs: 0 });
+      }
+    });
   }
 
   /* ====================================================================== *
@@ -2758,7 +3334,7 @@
     const s = store.get(p.id);
     if (!s) { root.innerHTML = notFoundHTML(); setCurrent({}); return; }
     fixSession(s);
-    if (s.kind === 'solo') { go('#/eleve/' + s.id); return; }
+    if (s.kind !== 'jury') { go(sessionHash(s)); return; }
     renderJury(root, s);
   });
   const eleveDef = def((root, p) => {
@@ -2766,7 +3342,16 @@
     const s = store.get(p.id);
     if (!s) { root.innerHTML = notFoundHTML(); setCurrent({}); return; }
     fixSession(s);
+    if (s.kind === 'call') { go(sessionHash(s)); return; }
     renderSolo(root, s);
+  });
+  const callDef = def((root, p) => {
+    if (!p.id || p.id === 'new') return renderChooser(root, 'call');
+    const s = store.get(p.id);
+    if (!s) { root.innerHTML = notFoundHTML(); setCurrent({}); return; }
+    fixSession(s);
+    if (s.kind !== 'call') { go(sessionHash(s)); return; }
+    renderCall(root, s);
   });
   function notFoundHTML() {
     return `<div class="screen"><div class="empty empty-page card"><div class="empty-ic">${icon('info')}</div><h1 class="h2">Séance introuvable</h1><p class="muted">Elle a peut-être été supprimée.</p><div class="row center"><button type="button" class="btn btn-primary" data-go="#/">${icon('home')}<span>Accueil</span></button></div></div></div>`;
@@ -2774,7 +3359,7 @@
 
   S.exam = Object.assign(S.exam || {}, {
     homeDef, store, countdown, speakEn, normSubject, newSession, exportMd,
-    defs: { oral: oralDef, sujet: def(renderSujet), eleve: eleveDef, fiches: def(renderFiches), historique: def(renderHistory) }
+    defs: { oral: oralDef, sujet: def(renderSujet), eleve: eleveDef, appel: callDef, fiches: def(renderFiches), historique: def(renderHistory) }
   });
 
   function registerAll() {

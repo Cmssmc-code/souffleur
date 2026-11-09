@@ -2,9 +2,15 @@
   'use strict';
   /* Souffleur — S.examAI : IA de l'oral blanc d'anglais des affaires (UE 218 DSGC / UE6 DSCG).
      Toutes les fonctions s'appuient sur S.ai.generate (bascule multi-fournisseurs, JSON tolérant).
-     Règle éthique : rien ici ne souffle de réponse à l'élève PENDANT un oral. Le « live » sert le jury
-     (couverture de la grille, fautes relevées, questions à poser) ; les corrections pour l'élève
-     (answerFeedback, evaluate) viennent APRÈS sa réponse. */
+     Règle éthique : l'aide en direct côté élève (liveAnswer, tirée de ce que dit l'autre partie de l'appel)
+     reste verrouillée jusqu'au jeudi 12/11/2026 14:00, heure de Paris, mesurée sur l'heure du serveur
+     (S.examLock, défini dans exam.js et vérifié ici avant tout appel) : l'oral officiel à distance était
+     prévu le jeudi 12/11 à 10 h et le logiciel ne distingue pas un appel d'entraînement de cet oral.
+     Aucun contournement (réglage, paramètre d'URL, drapeau de stockage, interrupteur de test).
+     Côté jury : notes en direct et questions à poser tout de suite ; réponse attendue (juryAnswer)
+     tout de suite pour une question suggérée par l'IA, et pour une question entendue au micro du jury
+     (jamais l'autre partie ni un micro mêlé) seulement après l'ouverture (contrôlé dans exam.js). Les corrections pour
+     l'élève (answerFeedback, evaluate) viennent APRÈS sa réponse. */
 
   const THEMES = {
     1: 'Finance',
@@ -729,10 +735,200 @@
     return out;
   }
 
+  /* --------------------------------------------------------- isJuryQuestion */
+
+  // Têtes de phrase sans contenu : salutations, remerciements, vérifications de son, mots d'appui, prénoms.
+  const Q_LEAD = new RegExp('^(?:' + [
+    'good (?:morning|afternoon|evening)', 'hello', 'hi', 'welcome(?: back)?',
+    'thank you(?: (?:very|so) much)?(?: (?:for (?:your|the|this) (?:presentation|answer|answers|time|attention)|again))?', 'thanks(?: a lot)?',
+    '(?:can|could|do|did) (?:you|everyone|everybody) (?:all )?(?:hear|see) (?:me|us|my screen|the screen)(?: (?:well|ok|okay|properly|clearly|now|all right|alright))*',
+    "(?:i|we) (?:can(?:'?t|not)? )?(?:hear|see) you(?: (?:well|now|clearly|very well|again))*",
+    "(?:i think )?(?:you(?:'?re| are)|i(?:'?m| am)) (?:on mute|muted|frozen|breaking up)", 'am i (?:audible|on mute|muted)',
+    "that(?:'?s| is) (?:all|it)(?: for (?:me|now|today|us))?", "time(?:'?s| is) up", "we(?:'?re| are) done",
+    'goodbye', 'bye(?: bye)?', 'see you(?: soon)?', 'have a (?:nice|good) day', "you(?:'?re| are) welcome", 'no problem',
+    'sorry', 'pardon', 'excuse me', 'i see', 'of course', 'sure', 'exactly', 'indeed', 'interesting',
+    'very good', 'good', 'great', 'perfect', 'fine', 'excellent', 'ok(?:ay)?', 'alright', 'all right', 'right',
+    'so', 'well', 'now', 'and', 'then', 'please', 'yes', 'yeah', 'um+', 'uh+', 'hmm+', 'mm+', 'erm',
+    'audrey', 'corentin', 'madam', 'sir', 'everyone', 'everybody'
+  ].join('|') + ')(?: |$)');
+  // Formules qui ressemblent à une question mais n'en sont pas (phrase entière).
+  const Q_FORMAL = new RegExp('^(?:' + [
+    'is (?:it|everything|that|this) (?:ok|okay|fine|all right|alright|good|working|better|clear)(?: (?:now|for you))*',
+    'is (?:my|the|your) (?:sound|audio|microphone|mic|video|camera|connection|screen|image)(?: (?:ok|okay|fine|good|working|clear|better|all right|alright))?(?: (?:now|for you))*',
+    '(?:can|could|do) you (?:all )?(?:hear|see) (?:it|that)(?: (?:well|ok|okay|properly|clearly|now))*',
+    'are you (?:ready(?: to (?:start|begin))?|there|still there|with us)',
+    "(?:(?:when(?:ever)?|if) you(?:'?re| are) ready )?(?:you (?:may|can) )?(?:start|begin|go ahead|proceed)(?: (?:now|please|when(?:ever)? you(?:'?re| are) ready))*",
+    "(?:let(?:'?s| us)|shall we|can we|we can|we may) (?:start|begin|get started)(?: (?:now|then))?"
+  ].join('|') + ')$');
+  const Q_ASK = new RegExp('^(?:' + [
+    "(?:what|why|how|when|where|who|whom|which|whose)(?:'?s)?",
+    "(?:do|does|did|is|are|was|were|have|has|can|could|would|will|should|shall)(?:n'?t)?", 'cannot', "won'?t", '(?:may|might) (?:i|we)',
+    'tell (?:us|me)', 'give (?:us|me)', 'talk about', 'explain', 'describe', 'summari[sz]e', 'define', 'comment on', 'develop', 'elaborate',
+    'expand on', 'justify', 'illustrate', 'clarify', 'rephrase', 'remind (?:us|me)',
+    'in your (?:opinion|view|experience)', 'according to you', "let(?:'?s| us) (?:talk|discuss|focus|come back|go back)", 'let me ask',
+    "i(?:'?d| would) like (?:you to|to (?:ask|know|hear))", 'i want you to',
+    'my (?:next |last |final |first |second |other )?question', '(?:one|a) (?:more|last|final|quick|follow up) question', 'i have (?:a|another|one more|one last) question'
+  ].join('|') + ')\\b');
+  const Q_NOT = /^(?:which (?:means|is why|explains|shows|leads)|what i (?:mean|want to say|wanted to say)|how (?:can|could|should) i (?:say|put it)|how do you say)\b/;
+  const Q_ANY = new RegExp('\\b(?:' + [
+    "(?:do|does|did|would|could|can|will|should|don'?t|didn'?t|wouldn'?t|couldn'?t) you (?:think|agree|believe|say|tell|explain|give|describe|elaborate|develop|expand|comment|summari[sz]e|define|mean|know|feel|recommend|suggest|choose|prefer|like|want|remember|clarify|justify|illustrate|consider|expect|imagine|have)",
+    '(?:what|why|how|which|where|when|who) (?:do|did|does|would|could|can|will|should|might) you',
+    'in your (?:opinion|view)', 'according to you', 'tell (?:us|me)'
+  ].join('|') + ')\\b');
+
+  function normQ(s) {
+    return String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/[^a-z0-9'\s]+/g, ' ')
+      .replace(/(?<![a-z])'|'(?![a-z])/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function stripLead(s) {
+    let m;
+    while ((m = s.match(Q_LEAD))) s = s.slice(m[0].length);
+    return s.trim();
+  }
+
+  // Le jury pose-t-il une question (ou une demande) à l'élève ? Heuristique anglaise, sans IA.
+  function isJuryQuestion(text) {
+    const raw = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    if (!raw) return false;
+    const parts = raw.split(/(?<=[.!?;…？])\s+/)
+      .map(p => ({ raw: p, rest: stripLead(normQ(p)) }))
+      .filter(p => p.rest && !Q_FORMAL.test(p.rest));
+    if (!parts.length) return false;
+    if (parts.some(p => /[?？][\s"'”’»)\]]*$/.test(p.raw))) return true;
+    if (words(parts.map(p => p.rest).join(' ')) < 3) return false;
+    return parts.some(p => (Q_ASK.test(p.rest) && !Q_NOT.test(p.rest)) || Q_ANY.test(p.rest));
+  }
+
+  /* ------------------------------------------- aide en direct (appel, jury) */
+
+  const LOCKED_MSG = 'Réponses en direct disponibles à partir du jeudi 12 novembre 2026 à 14 h.';
+  const KW_LINE = /(?:^|\s)[*_#>\s-]*(?:key ?words?|key expressions?|useful expressions?)\s*\**\s*[:：]/i;
+  // « — » seul = pas une question ; « — (remarque) » court aussi (jamais le début d'une vraie réponse).
+  const isSkip = t => /^[—–-]{1,3}$/.test(t) || (/^[—–]/.test(t) && t.length < 120);
+
+  function cleanSpoken(s) {
+    let t = String(s || '').replace(/\r/g, '').replace(/^[ \t]*(?:[-•*]|\d+[.)])[ \t]+/gm, '').replace(/[*`]+|__/g, '').trim();
+    t = t.replace(/^(?:candidate|answer|suggested answer|model answer|you could say)\s*:\s*/i, '');
+    if (/^["“«]/.test(t)) t = t.replace(/^["“«]\s*/, '').replace(/\s*["”»]$/, '');
+    return t.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+  }
+
+  function kwList(s) {
+    const t = String(s || '').replace(/[*`]+|__/g, '').trim();
+    if (!t) return [];
+    const seen = new Set();
+    const out = [];
+    t.split(/[;\n•|]/.test(t) ? /\s*[;\n•|]\s*/ : /\s*,\s*/).forEach(x => {
+      const k = x.replace(/^[\s"“”'‘’.\-–—]+|[\s"“”'‘’.,;]+$/g, '');
+      const low = k.toLowerCase();
+      if (!k || k.length > 80 || /^(?:none|n\/a)$/.test(low) || seen.has(low)) return;
+      seen.add(low);
+      out.push(k);
+    });
+    return out.slice(0, 5);
+  }
+
+  // Sépare la réponse parlée de la ligne finale « Keywords: … » ; en flux, une ligne « Keyw… » commencée est masquée.
+  function splitLive(full) {
+    let s = String(full || '').replace(/\r/g, '');
+    let kw = '';
+    const m = s.match(KW_LINE);
+    if (m) {
+      kw = s.slice(m.index + m[0].length);
+      s = s.slice(0, m.index);
+    } else {
+      const nl = s.lastIndexOf('\n');
+      const tail = nl < 0 ? '' : s.slice(nl + 1).replace(/[\s*_#>-]/g, '').toLowerCase();
+      if (tail && 'keywords'.indexOf(tail) === 0) s = s.slice(0, nl);
+    }
+    return { text: cleanSpoken(s), keyWords: kwList(kw) };
+  }
+
+  // Défense en profondeur : l'UI vérifie aussi S.examLock avant d'écouter ou d'afficher quoi que ce soit.
+  async function checkLiveLock(signal) {
+    const lock = S.examLock;
+    if (!lock || typeof lock.check !== 'function') return;
+    let res = null;
+    try { res = await lock.check(); } catch (e) { res = null; }
+    checkAbort(signal);
+    if (!res || res.open !== true) throw err('LOCKED', LOCKED_MSG);
+  }
+
+  // Côté élève, pendant un appel d'entraînement : réponse à dire au jury, en flux.
+  async function liveAnswer(opts) {
+    const o = opts || {};
+    await checkLiveLock(o.signal);
+    const question = str(o.question, 1500);
+    if (!question) throw err('NO_QUESTION', 'Aucune question du jury à traiter.');
+    const expose = clipMiddle(transcriptText(o.expose), 2500, 1500);
+    const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-10), 3000);
+    const size = o.shorter ? '2 short sentences, 40 words maximum' : '3-5 short sentences, 90 words maximum';
+    const system = [
+      'You are the candidate\'s English coach during a TRAINING mock oral for the French accounting diploma (DSCG UE6 / DSGC UE 218, business English, CEFR level B2 expected). The candidate has studied a press article and an exam question, has given a presentation, and is now questioned by the jury.',
+      'Write what the candidate can say right now to the jury: spoken English, in the first person, natural, B2-C1 level, ' + size + '.',
+      o.shorter
+        ? 'Give the direct answer, then one short reason or example.'
+        : 'Give the direct answer first, then one argument and one concrete example taken from the article or from 2025-2026 business news. Use simple linking words (first, because, for example, however, so).',
+      'No markdown, no list, no quotes, no preamble: only the words to say.',
+      'The jury\'s words come from automatic speech recognition: if some words are wrong or missing, answer the most likely intended question.',
+      'If the jury\'s words are not a question or a request addressed to the candidate (greeting, sound check, thanks, instructions, small talk), output exactly "—" and nothing else.',
+      'After the answer, you may add one last line: "Keywords: expression 1; expression 2; expression 3" (3-5 useful English expressions for this answer).',
+      'Usable recent news (2025-2026), only if relevant: ' + NEWS.join(' ')
+    ].join('\n');
+    const prompt = [
+      subjectBrief(o.subject, { textMax: 3500 }),
+      expose ? 'CANDIDATE\'S PRESENTATION (automatic transcript, may contain errors):\n' + expose : '',
+      turns ? 'RECENT EXCHANGE (automatic transcript, may contain errors):\n' + turns : '',
+      'JURY\'S WORDS JUST NOW (automatic transcript, may contain errors): ' + question,
+      '',
+      'Write the candidate\'s answer now (' + size + ').'
+    ].filter(Boolean).join('\n');
+    let shown = '';
+    const onDelta = (full) => {
+      if (typeof o.onDelta !== 'function' || (o.signal && o.signal.aborted)) return;
+      const t = splitLive(full).text;
+      if (!t || isSkip(t)) return;
+      const out = t.replace(/^[—–]\s*/, '');
+      if (!out || out === shown) return;
+      shown = out;
+      try { o.onDelta(out); } catch (e) { /* une erreur d'affichage ne coupe pas le flux */ }
+    };
+    const r = await call({ purpose: 'answer', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 400, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
+    const parts = splitLive(r.text);
+    if (parts.text && isSkip(parts.text)) return { text: '', keyWords: [], skip: true };
+    const text = parts.text.replace(/^[—–]\s*/, '');
+    if (!text) throw err('EMPTY', 'Réponse vide de l’IA — réessayez.');
+    return { text, keyWords: parts.keyWords, skip: false };
+  }
+
+  // Côté jury : ce qu'une bonne réponse doit contenir + réponse modèle, pour une question du jury lui-même.
+  async function juryAnswer(opts) {
+    const o = opts || {};
+    const question = str(o.question, 1500);
+    if (!question) throw err('NO_QUESTION', 'Aucune question du jury à traiter.');
+    const expose = clipMiddle(transcriptText(o.expose), 2500, 1500);
+    const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-10), 3000);
+    const system = EXAMINER + '\n\nYou help the JURY during the interview of a TRAINING mock oral. For the question the jury has just asked, state in French what a good B2 answer must contain, and write a model answer in English, in the first person, as a good B2 candidate would say it (natural spoken style, an argument and a concrete example from the article or recent news). The question comes from automatic speech recognition: if some words are wrong or missing, use the most likely intended question.';
+    const prompt = [
+      subjectBrief(o.subject, { textMax: 3500 }),
+      expose ? 'CANDIDATE\'S PRESENTATION (automatic transcript):\n' + expose : '',
+      turns ? 'INTERVIEW SO FAR (automatic transcript):\n' + turns : '',
+      'JURY QUESTION: ' + question,
+      '',
+      'Return ONLY JSON: {"expect": "en français : points clés qu’une bonne réponse B2 doit contenir (1-2 phrases)", "model": "model answer in English, 3-5 sentences, B2"}'
+    ].filter(Boolean).join('\n');
+    return callJson({ purpose: 'answer', system, prompt, temperature: 0.3, maxTokens: 700, timeoutMs: 20000, budgetMs: 40000, signal: o.signal }, (d) => {
+      const model = cleanSpoken(str(pick(d, ['model', 'modelAnswer', 'answer', 'better']), 1500));
+      if (model.length < 20) return null;
+      return { expect: str(pick(d, ['expect', 'expected', 'keyPoints', 'points']), 600), model };
+    }, 'Réponse modèle');
+  }
+
   S.examAI = {
     ready, generateSubject, subjectFromText, liveNotes, juryQuestion, answerFeedback, evaluate, translate,
+    isJuryQuestion, liveAnswer, juryAnswer,
     // extensions utiles à l'UI et aux tests
     heuristicCovered, normSubject, normEvaluation, CRITERIA, THEMES, COVER_KEYS, KINDS,
-    _internal: { splitImported, similar, fallbackQuestion, applyCaps }
+    _internal: { splitImported, similar, fallbackQuestion, applyCaps, splitLive }
   };
 })(window.Souffleur = window.Souffleur || {});

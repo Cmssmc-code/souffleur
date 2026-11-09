@@ -16,7 +16,10 @@ function memStorage() {
   return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), clear: () => m.clear() };
 }
 
+const abortError = () => { const e = new Error('Requête annulée.'); e.name = 'AbortError'; e.code = 'ABORTED'; return e; };
+
 // replies : tableau de réponses successives (string = texte brut, objet = JSON, Error = rejet, fonction(opts) = calculée).
+// En flux (stream + onDelta), le faux renvoie des préfixes croissants du texte, comme ai.js, avant de résoudre.
 function makeEnv({ key = true, replies = [] } = {}) {
   const env = { calls: [], replies: replies.slice() };
   const ctx = {
@@ -33,11 +36,18 @@ function makeEnv({ key = true, replies = [] } = {}) {
   S.ai.hasKey = () => key;
   S.ai.generate = async (opts) => {
     env.calls.push(opts);
-    if (opts.signal && opts.signal.aborted) { const e = new Error('Requête annulée.'); e.name = 'AbortError'; e.code = 'ABORTED'; throw e; }
+    if (opts.signal && opts.signal.aborted) throw abortError();
     let r = env.replies.length ? env.replies.shift() : '';
     if (typeof r === 'function') r = r(opts);
     if (r instanceof Error) throw r;
     const text = typeof r === 'string' ? r : JSON.stringify(r);
+    if (opts.stream && typeof opts.onDelta === 'function') {
+      for (let i = 1; i <= text.length; i++) {
+        await null;
+        if (opts.signal && opts.signal.aborted) throw abortError();
+        opts.onDelta(text.slice(0, i));
+      }
+    }
     const out = { text, provider: 'mock', model: 'mock-1', ms: 1 };
     if (opts.json) { const p = S.ai.parseJson(text); out.data = p ? p.data : null; }
     return out;
@@ -295,6 +305,215 @@ test('translate : texte nettoyé, sens fr/en', async () => {
   assert.equal(await env.x.translate('Les investisseurs…', { to: 'en' }), 'Investors poured billions.');
   assert.match(env.calls[1].system, /French → English/);
   assert.equal(await env.x.translate('  '), '');
+});
+
+/* ------------------------------------------------ aide en direct (appel, jury) */
+
+test('isJuryQuestion : questions et demandes du jury reconnues', () => {
+  const { x } = makeEnv();
+  [
+    'So, what do you think about tariffs?',
+    'Tell us more about the author\'s point of view',
+    'Could you elaborate on that',
+    'In your opinion, is it a good thing',
+    'Why?',
+    'And the risks for European firms?',
+    'What is the main idea of the article',
+    'okay so now could you develop your second argument',
+    'Explain why investors are worried about AI',
+    'Give us a concrete example please',
+    'According to you, who benefits from these tariffs',
+    'Let’s talk about the second part of your plan',
+    'Do you think the AI boom is a bubble',
+    'Would you say the tone of the article is critical',
+    'Have you ever worked with an ERP system',
+    'Is it OK for companies to relocate their production',
+    'Do you see it as a threat or an opportunity',
+    'Thank you for your presentation. Now, which companies are the most exposed',
+    'Can you hear me? What do you think about stablecoins?',
+    'Good morning Audrey. Talk about your professional experience',
+    '   wHAT   would   YOU   do   in   their   place   ',
+    'thank you for your presentation now let\'s move on what do you think about the omnibus directive'
+  ].forEach(t => assert.equal(x.isJuryQuestion(t), true, 'question attendue : ' + JSON.stringify(t)));
+});
+
+test('isJuryQuestion : vide, trop court, formules et vérifications de son exclues', () => {
+  const { x } = makeEnv();
+  [
+    '', '   ', null, undefined,
+    'Why',
+    'OK',
+    'Explain please',
+    'Thank you very much',
+    '  tHaNk   YoU  ',
+    'Can you hear me?',
+    'do you hear me',
+    'Can you see my screen?',
+    'Can you see it?',
+    'Good morning!',
+    'Good morning Audrey, can you hear me well?',
+    'Is everything OK for you?',
+    'Are you ready?',
+    'You may start.',
+    'you may begin when you are ready',
+    'When you’re ready, you can start.',
+    'Let’s start',
+    'That’s all, thank you.',
+    'Thank you. Can you hear me?',
+    'The author explains that AI valuations are stretched.',
+    'I think the author is right because valuations are very high.',
+    'which means that European firms will suffer'
+  ].forEach(t => assert.equal(x.isJuryQuestion(t), false, 'pas une question : ' + JSON.stringify(t)));
+});
+
+const LIVE_REPLY = 'I think tariffs mostly hurt consumers. First, firms pass the extra cost on to their prices. For example, after the 2025 US tariffs, many retailers raised their prices.\nKeywords: to pass on costs; trade war; supply chain';
+const LIVE_TEXT = 'I think tariffs mostly hurt consumers. First, firms pass the extra cost on to their prices. For example, after the 2025 US tariffs, many retailers raised their prices.';
+const TURNS = Array.from({ length: 12 }, (_, i) => ({ who: i % 2 ? 'student' : 'jury', text: 'marker-' + i + '-end' }));
+
+test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans ligne Keywords, mots-clés', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY] });
+  const deltas = [];
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'so what do you think about tariffs', expose: 'Today I am going to present an article about the AI bubble.', turns: TURNS, onDelta: t => deltas.push(t) });
+  const c = env.calls[0];
+  assert.equal(env.calls.length, 1);
+  assert.equal(c.purpose, 'answer');
+  assert.equal(c.stream, true);
+  assert.equal(c.temperature, 0.5);
+  assert.equal(c.maxTokens, 400);
+  assert.equal(c.timeoutMs, 15000);
+  assert.equal(c.budgetMs, 30000);
+  assert.match(c.prompt, /Is the AI boom a bubble\?/, 'titre du sujet');
+  assert.match(c.prompt, /To what extent should investors worry about an AI bubble\?/, 'question d’examen');
+  assert.match(c.prompt, /so what do you think about tariffs/, 'mots du jury');
+  assert.match(c.prompt, /present an article about the AI bubble/, 'exposé');
+  assert.match(c.prompt, /marker-2-end/);
+  assert.match(c.prompt, /marker-11-end/);
+  assert.doesNotMatch(c.prompt, /marker-[01]-end/, '10 derniers échanges seulement');
+  assert.match(c.system, /TRAINING/);
+  assert.match(c.system, /90 words/);
+  assert.match(c.system, /exactly "—"/);
+  assert.match(c.system, /Keywords:/);
+  assert.equal(r.skip, false);
+  assert.equal(r.text, LIVE_TEXT);
+  assert.deepEqual(r.keyWords, ['to pass on costs', 'trade war', 'supply chain']);
+  assert.ok(deltas.length > 20, 'réponse affichée au fil de l’eau');
+  assert.ok(deltas.every(d => d && LIVE_TEXT.startsWith(d)), 'chaque morceau est un début de la réponse, sans « Keywords »');
+  assert.equal(deltas[deltas.length - 1], LIVE_TEXT);
+});
+
+test('liveAnswer : réponse nettoyée (préambule, gras, guillemets) et mots-clés tolérants', async () => {
+  const env = makeEnv({ replies: ['**Answer:** "I agree with the author to some extent."\n**Key words:** stretched valuations, to some extent, bubble'] });
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'Do you agree with the author?' });
+  assert.equal(r.text, 'I agree with the author to some extent.');
+  assert.deepEqual(r.keyWords, ['stretched valuations', 'to some extent', 'bubble']);
+  const split = plain(env.x._internal.splitLive('Firms will suffer.\nKeyw'));
+  assert.deepEqual(split, { text: 'Firms will suffer.', keyWords: [] }, 'ligne « Keywords » en cours masquée');
+});
+
+test('liveAnswer : « — » (pas une question) → skip, rien d’affiché', async () => {
+  const env = makeEnv({ replies: ['—', ' – ', '-', '— (the jury is only greeting the candidate)'] });
+  for (let i = 0; i < 4; i++) {
+    const deltas = [];
+    const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'Good morning, can you hear me?', onDelta: t => deltas.push(t) });
+    assert.deepEqual(r, { text: '', keyWords: [], skip: true });
+    assert.equal(deltas.length, 0, 'aucun affichage pour un tiret');
+  }
+});
+
+test('liveAnswer : « Plus court » change la consigne', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY, 'Tariffs hurt consumers. Prices go up.'] });
+  await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?' });
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?', shorter: true });
+  assert.match(env.calls[0].system, /90 words/);
+  assert.doesNotMatch(env.calls[0].system, /40 words/);
+  assert.match(env.calls[1].system, /2 short sentences, 40 words maximum/);
+  assert.doesNotMatch(env.calls[1].system, /90 words/);
+  assert.match(env.calls[1].prompt, /40 words maximum/);
+  assert.equal(r.text, 'Tariffs hurt consumers. Prices go up.');
+});
+
+test('liveAnswer : sans clé → NO_KEY ; réponse vide → EMPTY ; question absente', async () => {
+  const env = makeEnv({ key: false });
+  await assert.rejects(env.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'NO_KEY' && /clé/.test(e.message));
+  assert.equal(env.calls.length, 0);
+  const env2 = makeEnv({ replies: ['', 'Keywords: a; b'] });
+  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'EMPTY' && e.message === 'Réponse vide de l’IA — réessayez.');
+  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'EMPTY');
+  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: '  ' }), e => e.code === 'NO_QUESTION' && /question/.test(e.message));
+  assert.equal(env2.calls.length, 2);
+});
+
+test('liveAnswer : annulation avant l’appel et pendant le flux', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY] });
+  const ac = new AbortController(); ac.abort();
+  await assert.rejects(env.x.liveAnswer({ subject: SUBJECT, question: 'Why?', signal: ac.signal }), e => e.name === 'AbortError');
+  assert.equal(env.calls.length, 0);
+  const env2 = makeEnv({ replies: [LIVE_REPLY] });
+  const ac2 = new AbortController();
+  const deltas = [];
+  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?', signal: ac2.signal, onDelta: t => { deltas.push(t); ac2.abort(); } }), e => e.name === 'AbortError' && e.code === 'ABORTED');
+  assert.equal(deltas.length, 1, 'plus rien d’affiché après l’annulation');
+});
+
+test('liveAnswer : verrou S.examLock fermé → LOCKED, aucun appel IA ; ouvert → réponse', async () => {
+  const locked = makeEnv({ key: false, replies: [LIVE_REPLY] });
+  let checks = 0;
+  locked.S.examLock = { check: async () => { checks++; return { open: false, source: 'server', now: Date.UTC(2026, 10, 12, 9, 0) }; } };
+  await assert.rejects(locked.x.liveAnswer({ subject: SUBJECT, question: 'What do you think about tariffs?', onDelta: () => assert.fail('rien ne doit s’afficher') }),
+    e => e.code === 'LOCKED' && e.message === 'Réponses en direct disponibles à partir du jeudi 12 novembre 2026 à 14 h.');
+  assert.equal(checks, 1);
+  assert.equal(locked.calls.length, 0, 'aucun appel IA avant l’ouverture');
+  const broken = makeEnv({ replies: [LIVE_REPLY] });
+  broken.S.examLock = { check: async () => { throw new Error('réseau'); } };
+  await assert.rejects(broken.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'LOCKED');
+  broken.S.examLock = { check: async () => undefined };
+  await assert.rejects(broken.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'LOCKED');
+  assert.equal(broken.calls.length, 0, 'verrou illisible = fermé');
+  const open = makeEnv({ replies: [LIVE_REPLY] });
+  open.S.examLock = { check: async () => ({ open: true, source: 'server', now: Date.UTC(2026, 10, 13, 8, 0) }) };
+  const r = await open.x.liveAnswer({ subject: SUBJECT, question: 'Why?' });
+  assert.equal(r.text, LIVE_TEXT);
+  assert.equal(open.calls.length, 1);
+});
+
+const JURY_REPLY = { expect: 'Définir les droits de douane, donner un effet sur les prix et un exemple de 2025-2026.', model: 'I believe tariffs are a double-edged sword. They protect some domestic producers, but consumers end up paying more, as we saw with the 2025 US tariffs.' };
+
+test('juryAnswer : JSON valide, purpose answer, côté jury (disponible même verrou fermé)', async () => {
+  const env = makeEnv({ replies: [JURY_REPLY] });
+  env.S.examLock = { check: async () => ({ open: false }) };
+  const r = await env.x.juryAnswer({ subject: SUBJECT, question: 'What do you think about tariffs?', expose: 'I think Nvidia is overvalued.', turns: TURNS });
+  const c = env.calls[0];
+  assert.equal(c.purpose, 'answer');
+  assert.equal(c.json, true);
+  assert.equal(c.temperature, 0.3);
+  assert.equal(c.maxTokens, 700);
+  assert.equal(c.timeoutMs, 20000);
+  assert.equal(c.budgetMs, 40000);
+  assert.match(c.system, /examiner/);
+  assert.match(c.system, /JURY/);
+  assert.match(c.prompt, /JURY QUESTION: What do you think about tariffs\?/);
+  assert.match(c.prompt, /Is the AI boom a bubble\?/);
+  assert.match(c.prompt, /Nvidia is overvalued/);
+  assert.doesNotMatch(c.prompt, /marker-[01]-end/);
+  assert.match(c.prompt, /"expect"/);
+  assert.deepEqual(r, JURY_REPLY);
+  const env2 = makeEnv({ replies: [{ expect: 'Points clés.', model: 'I think the author is right, because valuations are stretched.' }] });
+  const r2 = await env2.x.juryAnswer({ subject: SUBJECT, question: { en: 'Is the author right?', fr: 'L’auteur a-t-il raison ?' } });
+  assert.match(env2.calls[0].prompt, /JURY QUESTION: Is the author right\?/, 'question IA (objet) acceptée');
+  assert.match(r2.model, /valuations/);
+});
+
+test('juryAnswer : 2e tentative après JSON illisible, puis PARSE ; sans clé → NO_KEY', async () => {
+  const env = makeEnv({ replies: ['pas du json', JURY_REPLY] });
+  const r = await env.x.juryAnswer({ subject: SUBJECT, question: 'Why?' });
+  assert.equal(env.calls.length, 2);
+  assert.equal(r.model, JURY_REPLY.model);
+  const env2 = makeEnv({ replies: ['nope', { expect: 'x', model: 'Too short.' }] });
+  await assert.rejects(env2.x.juryAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'PARSE' && /illisible/.test(e.message));
+  assert.equal(env2.calls.length, 2);
+  const env3 = makeEnv({ key: false });
+  await assert.rejects(env3.x.juryAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'NO_KEY');
+  assert.equal(env3.calls.length, 0);
 });
 
 const PER_TEST_MS = 10000;
