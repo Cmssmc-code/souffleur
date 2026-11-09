@@ -795,33 +795,7 @@
     return parts.some(p => (Q_ASK.test(p.rest) && !Q_NOT.test(p.rest)) || Q_ANY.test(p.rest));
   }
 
-  /* ------------------------------------------- aide en direct (appel, jury) */
 
-
-  const KW_LINE = /(?:^|\s)[*_#>\s-]*(?:key ?words?|key expressions?|useful expressions?)\s*\**\s*[:：]/i;
-  // « — » seul = pas une question ; « — (remarque) » court aussi (jamais le début d'une vraie réponse).
-  const isSkip = t => /^[—–-]{1,3}$/.test(t) || (/^[—–]/.test(t) && t.length < 120);
-
-  function cleanSpoken(s) {
-    let t = String(s || '').replace(/\r/g, '').replace(/^[ \t]*(?:[-•*]|\d+[.)])[ \t]+/gm, '').replace(/[*`]+|__/g, '').trim();
-    t = t.replace(/^(?:candidate|answer|suggested answer|model answer|you could say)\s*:\s*/i, '');
-    if (/^["“«]/.test(t)) t = t.replace(/^["“«]\s*/, '').replace(/\s*["”»]$/, '');
-    return t.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
-  }
-
-  function kwList(s) {
-    const t = String(s || '').replace(/[*`]+|__/g, '').trim();
-    if (!t) return [];
-    const seen = new Set();
-    const out = [];
-    t.split(/[;\n•|]/.test(t) ? /\s*[;\n•|]\s*/ : /\s*,\s*/).forEach(x => {
-      const k = x.replace(/^[\s"“”'‘’.\-–—]+|[\s"“”'‘’.,;]+$/g, '');
-      const low = k.toLowerCase();
-      if (!k || k.length > 80 || /^(?:none|n\/a)$/.test(low) || seen.has(low)) return;
-      seen.add(low);
-      out.push(k);
-    });
-    return out.slice(0, 5);
   }
 
   // Sépare la réponse parlée de la ligne finale « Keywords: … » ; en flux, une ligne « Keyw… » commencée est masquée.
