@@ -438,7 +438,18 @@ export async function launchBrowser({ wav, headed } = {}) {
   return chromium.launch({ executablePath: findChrome(), headless: !headed, args });
 }
 
-/** Contexte isolé : API mockées, faux périphériques, service worker bloqué (testé par tools/check-pwa.mjs). */
+// Les scénarios historiques visent l'univers « entretiens d'embauche » (archivé, masqué par défaut depuis l'oral
+// d'anglais) : on l'active avant tout script de la page, sauf si le test a déjà choisi une valeur.
+function enableInterviews() {
+  try {
+    const k = 'souffleur.settings';
+    const s = JSON.parse(localStorage.getItem(k) || '{}') || {};
+    if (typeof s.showInterviews !== 'boolean') { s.showInterviews = true; localStorage.setItem(k, JSON.stringify(s)); }
+  } catch (e) { /* stockage bloqué : rien */ }
+}
+
+/** Contexte isolé : API mockées, faux périphériques, service worker bloqué (testé par tools/check-pwa.mjs).
+ *  o.interviews === false : laisse le mode entretiens désactivé (accueil = oral d'anglais). */
 export async function newContext(browser, mock, o = {}) {
   const context = await browser.newContext({
     viewport: o.viewport || { width: 1440, height: 900 },
@@ -454,6 +465,7 @@ export async function newContext(browser, mock, o = {}) {
   });
   if (mock) await mock.attach(context);
   await context.addInitScript(pageFakes);
+  if (o.interviews !== false) await context.addInitScript(enableInterviews);
   if (o.seed) await context.addInitScript(o.seed.fn, o.seed.arg);
   return context;
 }

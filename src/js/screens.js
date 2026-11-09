@@ -43,7 +43,7 @@
     else location.hash = hash;
   }
 
-  const dossierHash = (id) => (id ? `#/dossier/${encodeURIComponent(id)}` : '#/');
+  const dossierHash = (id) => (id ? `#/dossier/${encodeURIComponent(id)}` : '#/entretiens');
 
   function routeParams(params) {
     if (Array.isArray(params)) return { id: params[0] || '', sessionId: params[1] || '' };
@@ -99,7 +99,7 @@
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b || !el.contains(b) || b.disabled) return;
-      const fn = handlers[b.dataset.act] || (b.dataset.act === 'home' ? () => go('#/') : null);
+      const fn = handlers[b.dataset.act] || (b.dataset.act === 'home' ? () => go('#/entretiens') : null);
       if (!fn) return;
       e.preventDefault();
       fn(b, e);
@@ -1244,7 +1244,13 @@
     const scale = Number(s.fontScale) || 1;
     const delay = Number(s.answerDelayMs) || 900;
 
+    const iv = s.showInterviews === true;
     body.innerHTML = `
+      ${section('Mode', `
+        <div class="list-row">${tile('building', 'gray')}${main('Afficher les entretiens d’embauche (archivés)', 'Ajoute l’onglet « Entretiens » : dossiers, souffleur en direct, entraînement et coffre chiffré. Désactivé, Souffleur ne sert qu’à l’oral d’anglais.')}
+          ${sw('showInterviews', iv, 'Afficher les entretiens d’embauche (archivés)')}</div>
+        <button type="button" class="list-row" data-act="interviews" data-iv-only${iv ? '' : ' hidden'}>${tile('building', 'blue')}${main('Ouvrir les entretiens', null)}${chev()}</button>`)}
+
       ${section('Clés d’intelligence artificielle', `
         ${keyRow({ id: 'openai', name: 'OpenAI (GPT-5.4 mini)', icon: 'bolt', color: 'blue', badge: '<span class="pill pill-ok">Prioritaire · la plus rapide</span>', url: 'https://platform.openai.com/api-keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'proj-…', hint: 'Réponses en direct (1er mot ≈ 0,5 s) et préparation.' })}
         ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite · recommandée</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir une clé gratuite', placeholder: 'AIza…', hint: 'Transcription du recruteur, réponses et préparation.' })}
@@ -1269,7 +1275,7 @@
         <div class="list-row st-range st-wrap" data-dep="autoAnswer">${tile('clock', 'orange')}${main('Délai avant de répondre', 'Silence attendu après la question.')}
           <span class="st-range-ctl"><input type="range" min="300" max="3000" step="100" value="${delay}" data-set="answerDelayMs" aria-label="Délai avant de répondre"><output data-out="answerDelayMs">${fmtNum(delay / 1000)} s</output></span></div>
         <div class="list-row st-wrap">${tile('mic', 'green')}${main('Langue de l’entretien', 'Reconnaissance vocale et voix de l’entraînement.')}
-          <select data-set="lang" aria-label="Langue de l’entretien">${LANGS.map(([v, l]) => `<option value="${v}" ${v === (s.lang || 'fr-FR') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`)}
+          <select data-set="lang" aria-label="Langue de l’entretien">${LANGS.map(([v, l]) => `<option value="${v}" ${v === (s.lang || 'fr-FR') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`, 'st-iv-only')}
 
       ${section('Affichage', `
         <div class="list-row st-wrap">${tile('eye', 'blue')}${main('Thème', 'Automatique : suit le réglage de l’appareil.')}${seg('theme', s.theme || 'auto', [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']])}</div>
@@ -1280,16 +1286,23 @@
       ${section('Données et appareil', `
         <div class="list-row">${tile('doc', 'gray')}${main('Stockage local', 'Calcul…', 'data-usage')}
           <button type="button" class="btn btn-sm btn-ghost" data-act="persist" hidden>${icon('shield')} Protéger</button></div>
-        ${typeof S.store.exportAll === 'function' ? `<button type="button" class="list-row" data-act="backup">${tile('download', 'blue')}${main('Sauvegarder tous mes dossiers', 'Fichier .souffleur.json à garder sur une clé USB ou dans vos mails (sans les clés).')}${chev()}</button>` : ''}
-        <button type="button" class="list-row" data-act="diag">${tile('shield', 'green')}${main('Diagnostic avant entretien', 'Micro, son de l’appel, clé, connexion.')}${chev()}</button>
-        <button type="button" class="list-row" data-act="onboarding">${tile('info', 'violet')}${main('Revoir la prise en main', null)}${chev()}</button>
-        <button type="button" class="list-row st-danger" data-act="wipe">${tile('trash', 'red')}${main('Effacer toutes mes données de cet appareil', 'Dossiers, sessions, réglages et clés.')}</button>`)}
+        ${typeof S.store.exportAll === 'function' ? `<button type="button" class="list-row" data-act="backup" data-iv-only>${tile('download', 'blue')}${main('Sauvegarder tous mes dossiers', 'Fichier .souffleur.json à garder sur une clé USB ou dans vos mails (sans les clés).')}${chev()}</button>` : ''}
+        <button type="button" class="list-row" data-act="diag">${tile('shield', 'green')}${main('Diagnostic', 'Micro, son de l’appel Teams, clé IA, connexion : à faire avant chaque oral.')}${chev()}</button>
+        <button type="button" class="list-row" data-act="onboarding" data-iv-only>${tile('info', 'violet')}${main('Revoir la prise en main', null)}${chev()}</button>
+        <button type="button" class="list-row st-danger" data-act="wipe">${tile('trash', 'red')}${main('Effacer toutes mes données de cet appareil', 'Oraux blancs, sujets importés, dossiers, sessions, réglages et clés.')}</button>`)}
 
       <p class="small muted st-about">${icon('shield')} Souffleur fonctionne entièrement dans votre navigateur. Vos documents et vos clés restent sur cet appareil ; l’IA est appelée directement chez Google ou Anthropic, sans serveur intermédiaire.</p>`;
 
     let discovered = { gemini: [], claude: [] };
 
+    // Lignes et sections propres aux entretiens d'embauche : visibles seulement si le mode est activé.
+    function syncInterviews() {
+      const on = settings().showInterviews === true;
+      body.querySelectorAll('.st-iv-only, [data-iv-only]').forEach((n) => { n.hidden = !on; });
+    }
+
     function syncDeps() {
+      syncInterviews();
       const on = settings().autoAnswer !== false;
       body.querySelectorAll('[data-dep="autoAnswer"]').forEach((row) => {
         row.classList.toggle('is-disabled', !on);
@@ -1380,7 +1393,7 @@
     async function wipe() {
       const ok = await S.ui.confirm({
         title: 'Effacer toutes vos données ?',
-        text: 'Dossiers, documents, préparations, sessions, réglages et clés enregistrés sur cet appareil seront supprimés définitivement. Exportez d’abord les dossiers à conserver.',
+        text: 'Oraux blancs, sujets importés, dossiers, documents, préparations, sessions, réglages et clés enregistrés sur cet appareil seront supprimés définitivement. Exportez d’abord ce que vous voulez conserver.',
         okLabel: 'Tout effacer',
         danger: true
       });
@@ -1438,6 +1451,7 @@
         loadUsage();
       },
       diag: () => go('#/diag'),
+      interviews: () => go('#/entretiens'),
       backup: async () => {
         try {
           const blob = await S.store.exportAll({ includeKeys: false });
@@ -1909,7 +1923,7 @@
     }
 
     onAct(el, {
-      back: () => go('#/'),
+      back: () => go('#/settings'),
       rerun: () => runAuto(),
       row: (btn) => {
         const k = btn.dataset.key;

@@ -60,6 +60,22 @@ try {
   await page.goto(url, { waitUntil: 'load' });
   const meta = await page.evaluate(() => document.querySelector('meta[name="souffleur-version"]')?.content || 'dev');
 
+  // 0. Oral d'anglais : modules examen chargés, onglets Oral / Fiches, raccourcis du manifeste.
+  const examState = await page.evaluate(async () => {
+    const S = window.Souffleur || {};
+    const tabs = [...document.querySelectorAll('#tabbar [data-tab]')].filter((a) => !a.hidden).map((a) => a.dataset.tab);
+    let shortcuts = [];
+    try { shortcuts = ((await (await fetch('manifest.webmanifest')).json()).shortcuts || []).map((s) => s.url); } catch (e) { /* rien */ }
+    return {
+      modules: ['examFiches', 'examSubjects', 'examAI', 'exam', 'examStore'].filter((k) => !S[k]),
+      subjects: Array.isArray(S.examSubjects) ? S.examSubjects.length : 0,
+      tabs, shortcuts
+    };
+  });
+  check('modules de l’oral chargés', !examState.modules.length, examState.modules.length ? 'manquants : ' + examState.modules.join(', ') : `${examState.subjects} sujets`);
+  check('onglets Oral / Fiches / Réglages (entretiens masqués)', examState.tabs.join() === 'home,fiches,settings', examState.tabs.join(', '));
+  check('raccourcis du manifeste : oral blanc et fiches', examState.shortcuts.some((u) => /#\/oral\/new$/.test(u)) && examState.shortcuts.some((u) => /#\/fiches$/.test(u)), examState.shortcuts.join(', '));
+
   // 1. Install + activation (register ourselves if the app has not done it yet).
   const swState = await page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return { error: 'no serviceWorker' };

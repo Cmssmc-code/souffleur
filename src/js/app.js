@@ -37,6 +37,8 @@
   const settings = () => { try { return (S.store && S.store.settings && S.store.settings()) || {}; } catch (e) { return {}; } };
   const setSettings = (patch) => { try { if (S.store && S.store.setSettings) S.store.setSettings(patch); } catch (e) { console.warn('[souffleur] settings', e); } };
   const hasKey = () => { try { return !!(S.ai && S.ai.hasKey && S.ai.hasKey()); } catch (e) { return false; } };
+  // Univers « entretiens d'embauche » archivé : masqué tant que le réglage n'est pas activé.
+  const showInterviews = () => settings().showInterviews === true;
   const nowIso = () => new Date().toISOString();
   const errMsg = (e) => (e && (e.userMessage || e.message)) || String(e || 'Erreur inconnue');
   const isAbort = (e) => !!e && (e.name === 'AbortError' || e.code === 20 || /abort/i.test(e.message || ''));
@@ -576,13 +578,32 @@
     </div></div>`;
   }
 
+  const EXAM_ROUTES = ['', 'oral', 'eleve', 'sujet', 'historique'];
+  const INTERVIEW_ROUTES = ['entretiens', 'dossier', 'recap', 'live', 'training'];
+  function tabFor(name) {
+    if (EXAM_ROUTES.includes(name)) {
+      // Sans exam.js, l'accueil '' reste celui des entretiens.
+      return name === '' && routes[''] === homeRoute && showInterviews() ? 'entretiens' : 'home';
+    }
+    if (INTERVIEW_ROUTES.includes(name)) return showInterviews() ? 'entretiens' : '';
+    if (name === 'diag') return 'settings';
+    return name;
+  }
   function updateTabbar(name) {
-    const tab = name === '' ? 'home' : name;
+    const tab = tabFor(name);
     $$('#tabbar [data-tab]').forEach((a) => {
-      const on = a.dataset.tab === tab || (a.dataset.tab === 'home' && (name === 'dossier' || name === 'recap'));
+      const on = a.dataset.tab === tab;
       a.classList.toggle('on', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+  }
+  /** Onglet « Entretiens » visible seulement si le réglage showInterviews est actif. */
+  function applyInterviewsMode() {
+    const on = showInterviews();
+    $$('#tabbar [data-tab="entretiens"]').forEach((a) => { a.hidden = !on; });
+    if (on) document.documentElement.setAttribute('data-interviews', 'on');
+    else document.documentElement.removeAttribute('data-interviews');
+    if (current) updateTabbar(current.name);
   }
 
   /* ====================================================================== *
@@ -732,6 +753,7 @@
           ${isGuest() ? `<span class="pill pill-warn" title="Clés gardées jusqu’à la fermeture de l’onglet">${icon('shield')}Mode invité</span>` : ''}
           <button type="button" class="btn btn-sm install-btn" data-act="install"${installEvt ? '' : ' hidden'}>${icon('download')}<span>Installer l’app</span></button>
           <button type="button" class="icon-btn" data-act="import" title="Importer un dossier" aria-label="Importer un dossier">${icon('import')}</button>
+          ${routes[''] !== homeRoute ? `<button type="button" class="icon-btn hide-mobile" data-go="#/" title="Oral d’anglais" aria-label="Oral d’anglais">${icon('graduation')}</button>` : ''}
           <button type="button" class="icon-btn hide-mobile" data-go="#/diag" title="Diagnostic" aria-label="Diagnostic">${icon('shield')}</button>
           <button type="button" class="icon-btn hide-mobile" data-go="#/settings" title="Réglages" aria-label="Réglages">${icon('gear')}</button>
         </div>
@@ -795,7 +817,8 @@
       else if (act === 'wipe') cleanupSheet();
     });
     bindHomeDrop(root);
-    if (S.vault) S.vault.mount(root.querySelector('[data-b="vault"]'));
+    // Coffre chiffré : jamais de code demandé tant que les entretiens sont masqués.
+    if (S.vault && showInterviews()) S.vault.mount(root.querySelector('[data-b="vault"]'));
   }
 
   // Accueil : déposer un .souffleur.json l'importe ; déposer des documents crée un entretien avec ces documents.
@@ -857,7 +880,7 @@
 
     root.innerHTML = `<div class="screen dossier">
       <header class="topbar glass">
-        <button type="button" class="icon-btn" data-go="#/" aria-label="Retour aux entretiens" title="Entretiens">${icon('chevron-left')}</button>
+        <button type="button" class="icon-btn" data-go="#/entretiens" aria-label="Retour aux entretiens" title="Entretiens">${icon('chevron-left')}</button>
         <div class="topbar-title" data-b="title">${esc(dTitle(d))}</div>
         <div class="topbar-actions">
           <button type="button" class="icon-btn" data-act="export" title="Exporter" aria-label="Exporter">${icon('export')}</button>
@@ -957,7 +980,7 @@
           save.cancel();
           await S.store.remove(d.id);
           toast('Dossier supprimé.', 'ok');
-          S.app.go('#/');
+          S.app.go('#/entretiens');
         }
       } else if (act === 'pick') {
         const files = await pickFiles({ accept: (S.docs && S.docs.accept) || '', multiple: true });
@@ -3383,7 +3406,10 @@
   /* ====================================================================== *
    *  Enregistrement des écrans du cœur
    * ====================================================================== */
-  routes[''] = { render: renderHome, leave: leaveHome };
+  // Accueil des entretiens : toujours sur 'entretiens' ; sur '' tant que exam.js ne l'a pas remplacé.
+  const homeRoute = { render: renderHome, leave: leaveHome };
+  routes.entretiens = homeRoute;
+  if (!routes['']) routes[''] = homeRoute;
   routes.dossier = { render: renderDossier, leave: leaveDossier };
   routes.live = { render: renderLive, leave: leaveLive, canLeave: canLeaveLive };
 
@@ -3463,12 +3489,12 @@
         if (typeof dta === 'string') toast(dta, 'info');
         else if (dta) toast(dta.msg || dta.message || dta.text || '', dta.kind || 'info', dta);
       });
-      S.bus.on('settings:changed', () => { applyTheme(); if (L && L.running) paintAI(); });
+      S.bus.on('settings:changed', () => { applyTheme(); applyInterviewsMode(); if (L && L.running) paintAI(); });
       S.bus.on('store:keys', onImportedKeys);
       // Modifications faites dans un autre onglet (BroadcastChannel / événement storage).
       S.bus.on('store:changed', (x) => {
         if (!x || !x.remote || !current || (L && L.running)) return;
-        if (current.name === '') { route(true); return; }
+        if (current.def === homeRoute) { route(true); return; }
         if (current.name === 'dossier' && DX && (x.id === DX.d.id || x.action === 'clear')) {
           toast('Ce dossier a été modifié dans un autre onglet.', 'info', { duration: 8000, action: { label: 'Recharger', onClick: () => route(true) } });
         }
@@ -3499,6 +3525,7 @@
       return;
     }
     applyTheme();
+    applyInterviewsMode();
     if (S.store.backend === 'memory') showStorageWarning();
     const embeddedId = await importEmbedded();
     if (embeddedId && (!location.hash || location.hash === '#' || location.hash === '#/')) history.replaceState(null, '', '#/dossier/' + embeddedId);
@@ -3519,7 +3546,8 @@
       }
     } catch (e) { /* rien */ }
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then((p) => { if (!p && navigator.storage.persist) navigator.storage.persist().catch(() => {}); }).catch(() => {}); } catch (e) { /* rien */ }
-    if (!settings().onboarded && typeof S.app.onboarding === 'function') {
+    // Prise en main « entretien » (clé + documents) : seulement dans le mode entretiens ; l'oral blanc ne bloque jamais.
+    if (showInterviews() && !settings().onboarded && typeof S.app.onboarding === 'function') {
       try { await S.app.onboarding(); } catch (e) { console.warn('[souffleur] onboarding', e); }
     }
   }

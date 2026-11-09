@@ -66,7 +66,7 @@ let navSeq = 0;
 async function gotoApp(page, base, hash) {
   // Un paramètre de requête différent force un vrai rechargement (état IA, audio, etc. remis à zéro).
   const sep = base.includes('?') ? '&' : '?';
-  await page.goto(`${base}${base.startsWith('file:') ? '' : `${sep}n=${++navSeq}`}${hash || '#/'}`);
+  await page.goto(`${base}${base.startsWith('file:') ? '' : `${sep}n=${++navSeq}`}${hash || '#/entretiens'}`);
   await page.waitForFunction(() => window.Souffleur && Souffleur.app && Souffleur.store && document.querySelector('#view .route'), null, { timeout: 15000 });
   await closeOnboarding(page);
 }
@@ -128,10 +128,10 @@ async function ask(page, q) {
 
 async function leaveLive(page) {
   // Quitter un entretien en cours demande confirmation (canLeave) : on confirme.
-  await page.evaluate(() => Souffleur.app.go('#/'));
+  await page.evaluate(() => Souffleur.app.go('#/entretiens'));
   const confirm = await page.waitForSelector('.sheet-confirm .btn-danger', { timeout: 3000 }).catch(() => null);
   if (confirm) await confirm.click();
-  await page.waitForFunction(() => document.body.dataset.route === 'home', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.body.dataset.route === 'entretiens', null, { timeout: 5000 });
 }
 
 async function getDossier(page, id) {
@@ -200,7 +200,7 @@ await test('prise en main (onboarding 3 étapes)', async () => {
 });
 
 await test('création de dossier depuis l’accueil', async () => {
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   await page.click('.section-head [data-act="new"]');
   await page.fill('#nd-company', 'Banque des Territoires');
   await page.fill('#nd-role', 'Contrôleur de gestion senior');
@@ -211,17 +211,17 @@ await test('création de dossier depuis l’accueil', async () => {
   assert(state.d2 !== state.d1, 'nouvel identifiant');
   const d = await getDossier(page, state.d2);
   assert(d && d.company === 'Banque des Territoires' && d.mode === 'tel', `dossier enregistré : ${JSON.stringify(d && { c: d.company, m: d.mode })}`);
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   const n = await page.$$eval('.dgrid .dcard', (x) => x.length);
   assert(n === 2, `2 cartes de dossier sur l’accueil (${n})`);
   assert(await page.$('.hero') !== null, 'le prochain entretien (demain) est mis en avant');
 });
 
 await test('synchronisation entre onglets (accueil rafraîchi)', async () => {
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   const other = await ctx.newPage();
   try {
-    await other.goto(`${BASE}#/`);
+    await other.goto(`${BASE}#/entretiens`);
     await other.waitForFunction(() => window.Souffleur && Souffleur.store && document.querySelector('#view .route'));
     const n0 = await page.$$eval('.dgrid .dcard', (x) => x.length);
     const id = await other.evaluate(async () => (await Souffleur.store.create({ company: 'Onglet voisin', role: 'Test' })).id);
@@ -360,7 +360,7 @@ await test('fin de session → récap IA (mail de remerciement)', async () => {
 await test('live {them:"mic", themEngine:"cloud"} : VAD + transcription mockée → réponse', async () => {
   mock.reset();
   mock.delays.answer = 300;
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   // Configuration personnalisée (hors préréglages) : l'app la transmet telle quelle à S.audio.start.
   await page.evaluate(() => {
     const P = Souffleur.audio.presets;
@@ -552,7 +552,7 @@ await test('export .souffleur.json puis import (nouvel identifiant)', async () =
   assert(j.format === 'souffleur' && j.version === 2 && j.dossier && j.dossier.company === 'Hélios Énergie', 'format du fichier exporté');
   assert(!j.keys && !fs.readFileSync(file, 'utf8').includes(GEMINI_KEY), 'aucune clé exportée par défaut');
   const before = (await page.evaluate(() => Souffleur.store.list())).length;
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('.home-tools [data-act="import"]')]);
   await fc.setFiles(file);
   const hash = await waitHash(page, /^#\/dossier\/[^/]+$/);
@@ -594,7 +594,7 @@ await test('export HTML autonome : s’ouvre en file:// avec le dossier', async 
 });
 
 await test('glisser-déposer sur l’accueil : dossier importé, documents → nouvel entretien', async () => {
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   const drop = (files) => page.evaluate(async (list) => {
     const dt = new DataTransfer();
     for (const f of list) {
@@ -614,7 +614,7 @@ await test('glisser-déposer sur l’accueil : dossier importé, documents → n
   await expectToast(page, /importé/);
   assert((await page.evaluate(() => Souffleur.store.list())).length === before + 1, 'dossier importé par glisser-déposer');
   // 2) Des documents déposés sur l'accueil créent un entretien qui les contient.
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   await drop([{ name: 'CV Camille.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', b64: b64(path.join(FIXTURES, 'sample.docx')) },
     { name: 'notes.txt', type: 'text/plain', b64: b64(path.join(FIXTURES, 'sample.txt')) }]);
   const hash = await waitHash(page, /^#\/dossier\/[^/]+$/);
@@ -636,7 +636,7 @@ await test('import d’un dossier avec clés : proposition de remplacement', asy
   assert(j.keys && j.keys.geminiKey === GEMINI_KEY, 'clé incluse sur demande');
   const OTHER = 'cle-gemini-autre-0003';
   await page.evaluate((k) => Souffleur.store.setSettings({ geminiKey: k }), OTHER);
-  await gotoApp(page, BASE, '#/');
+  await gotoApp(page, BASE, '#/entretiens');
   const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('.home-tools [data-act="import"]')]);
   await fc.setFiles(file);
   await page.waitForSelector('.sheet-confirm', { timeout: 5000 });
@@ -677,7 +677,8 @@ await test('fichier unique en file:// (dist/site/souffleur.html) : parcours comp
   activePage = p3;
   const FILE = pathToFileURL(DIST).href;
   try {
-    await p3.goto(FILE);
+    // L'accueil '' est l'oral d'anglais : le parcours « entretien » part de #/entretiens.
+    await p3.goto(FILE + '#/entretiens');
     await p3.waitForSelector('.ob-sheet [data-ob="key"]', { timeout: 15000 });
     await p3.fill('[data-ob="key"]', GEMINI_KEY);
     await p3.click('.ob-foot [data-act="skip"]');
@@ -727,7 +728,7 @@ await test('fichier unique en file:// (dist/site/souffleur.html) : parcours comp
 
 await test('aucune erreur JS non gérée (tous écrans)', async () => {
   // Parcours rapide de tous les écrans restants pour relever d'éventuelles erreurs.
-  for (const h of ['#/', `#/dossier/${state.d2}`, `#/live/${state.d2}`, `#/training/${state.d2}`, `#/recap/${state.d1}/${state.liveSession}`, '#/settings', '#/diag', '#/inconnu', '#/dossier/inexistant']) {
+  for (const h of ['#/', '#/entretiens', '#/fiches', '#/oral/new', '#/eleve', '#/historique', `#/dossier/${state.d2}`, `#/live/${state.d2}`, `#/training/${state.d2}`, `#/recap/${state.d1}/${state.liveSession}`, '#/settings', '#/diag', '#/inconnu', '#/dossier/inexistant']) {
     await gotoApp(page, BASE, h);
     await sleep(500);
   }

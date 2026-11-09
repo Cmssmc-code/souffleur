@@ -22,8 +22,9 @@ const OUT = path.resolve(ROOT, args.out || path.join('dist', 'site'));
 const BASE = normalizeBase(args.base || basePathFromPackage() || '/souffleur/');
 const STRICT = !!args.strict;
 
-const EXPECTED_JS = ['js/util.js', 'js/store.js', 'js/docs.js', 'js/ai.js', 'js/audio.js', 'js/app.js', 'js/screens.js'];
-const EXPECTED_CSS = ['styles.css', 'screens.css'];
+const EXPECTED_JS = ['js/util.js', 'js/store.js', 'js/docs.js', 'js/ai.js', 'js/audio.js', 'js/vault.js', 'js/app.js', 'js/screens.js',
+  'js/exam-fiches.js', 'js/exam-subjects.js', 'js/exam-subjects-2.js', 'js/exam-ai.js', 'js/exam.js'];
+const EXPECTED_CSS = ['styles.css', 'screens.css', 'exam.css'];
 const INLINE_MAX = 100 * 1024;      // images up to 100 KB become data: URIs in the single file
 const PRECACHE_MAX = 1.5 * 1024 * 1024;
 const PRECACHE_EXT = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.avif', '.gif', '.woff2', '.woff', '.wasm']);

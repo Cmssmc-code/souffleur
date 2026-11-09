@@ -5,6 +5,7 @@ dist/
 
 # Captures des tests Playwright
 tests/shots/
+tests/shots-exam/
 tests/.cache/
 
 # Secrets : clés de signature, variables d'environnement
