@@ -26,10 +26,7 @@
   const str = (x) => (x == null ? '' : String(x));
   const NB = ' ';
 
-  function fmtClock(ms) {
-    const neg = ms < 0;
-    const s = Math.floor(Math.abs(ms || 0) / 1000);
-    return (neg ? '+' : '') + pad2(Math.floor(s / 60)) + ':' + pad2(s % 60);
+
   }
   function fmtDur(ms) {
     if (!ms || ms < 0) return '—';
@@ -378,9 +375,7 @@
     };
   }
 
-  /* ====================================================================== *
-   *  Chrono unique (1 s), alarme douce, Wake Lock
-   * ====================================================================== */
+  /
   const tickFns = new Set();
   let tickTimer = 0;
   function onTick(fn) {
@@ -418,9 +413,7 @@
       if (on && !wake && !wakePending && navigator.wakeLock) {
         wakePending = true;
         let w = null;
-        try { w = await navigator.wakeLock.request('screen'); } finally { wakePending = false; }
-        // Écran quitté pendant la demande : on relâche tout de suite.
-        if (!wantWake) { try { await w.release(); } catch (e) { /* rien */ } return; }
+   
         wake = w;
         w.addEventListener('release', () => { if (wake === w) wake = null; });
       } else if (!on && wake) { const w = wake; wake = null; await w.release(); }
@@ -1964,13 +1957,7 @@
       askModel(prev && now - prev.at < 8000 ? prev.text + ' ' + text : text, 'heard');
     }
     async function askModel(question, src) {
-      // Question entendue : même ouverture que l'aide en direct de l'appel (S.examLock, heure du serveur).
-      if (src === 'heard') {
-        let st = null;
-        try { st = await S.examLock.check(); } catch (e) { st = null; }
-        if (!C.alive) return;
-        C.ja.heardLocked = !(st && st.open === true);
-        if (C.ja.heardLocked) { paintJuryAnswer(); return; }
+   
       }
       if (C.ja.ctrl) C.ja.ctrl.abort();
       const req = {};
@@ -2890,14 +2877,7 @@
 
   /* ====================================================================== *
    *  Écran : appel d'entraînement Teams ou Meet ('appel')
-   *  Réponse IA, traduction, mots clés et fenêtre flottante suivent S.examLock (heure du serveur).
-   * ====================================================================== */
-  const LOCK_TITLE = 'Disponible à partir du jeudi 12 novembre à 14 h';
-  const LOCK_TEXT = 'L’oral officiel était prévu jeudi 12 novembre à 10 h. Le logiciel ne distingue pas un appel d’entraînement de l’oral à distance : l’aide en direct s’ouvre donc ce jour-là à 14 h. D’ici là, le jury IA corrige chaque réponse juste après.';
-  const NO_KEY_LIVE = 'Pas de clé IA : ajoutez-en une dans Réglages.';
-  const OLD_AI = 'Aide en direct indisponible : rechargez la page (Souffleur vient d’être mis à jour).';
-  const JOIN_MS = 8000;
-
+  
   function copyStylesTo(doc) {
     $$('style, link[rel="stylesheet"]').forEach((n) => {
       let css = '';
@@ -3027,7 +3007,7 @@
       if (C.alive && (!was || was.open !== st.open)) { C.paintListen(); paintHist(); }
       return st.open;
     }
-    const recheck = () => S.examLock.check().then((st) => (C.alive ? applyLock(st) : false));
+    
 
     /* --- Réponse IA en direct : une seule requête à la fois --- */
     function callExpose() {
@@ -3057,19 +3037,7 @@
       item.error = '';
       paintLive(); paintHist();
       const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
-      const st = await S.examLock.check();
-      if (R.req !== req || !C.alive) return;
-      if (!st.open) { drop(); applyLock(st); C.saveSoon(); return; }
-      try {
-        if (!aiHas('liveAnswer')) throw new Error(OLD_AI);
-        if (!item.fr && aiHas('translate')) {
-          S.examAI.translate(question, { to: 'fr', signal: ctrl.signal }).then((fr) => {
-            fr = str(fr).trim();
-            if (!fr || !C.alive || !call.answers.includes(item)) return;
-            item.fr = fr; C.saveSoon();
-            if (shown() === item) views().forEach((v) => { const el = $('[data-b="fr"]', v); if (el) el.textContent = fr; });
-            paintHist();
-          }).catch(() => { /* la traduction reste facultative */ });
+         
         }
         const r = await S.examAI.liveAnswer({
           subject: s.subject, question, expose: callExpose(), shorter: !!o.shorter, signal: ctrl.signal,
