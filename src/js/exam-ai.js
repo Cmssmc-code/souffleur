@@ -1,12 +1,6 @@
 (function (S) {
   'use strict';
-  /* Souffleur — S.examAI : IA de l'oral blanc d'anglais des affaires (UE 218 DSGC / UE6 DSCG).
-     Toutes les fonctions s'appuient sur S.ai.generate (bascule multi-fournisseurs, JSON tolérant).
-     
-     Côté jury : notes en direct et questions à poser tout de suite ; réponse attendue (juryAnswer)
-     tout de suite pour une question suggérée par l'IA, et pour une question entendue au micro du jury
-     (jamais l'autre partie ni un micro mêlé) seulement après l'ouverture (contrôlé dans exam.js). Les corrections pour
-     l'élève (answerFeedback, evaluate) viennent APRÈS sa réponse. */
+ 
 
   const THEMES = {
     1: 'Finance',
@@ -814,15 +808,7 @@
     return { text: cleanSpoken(s), keyWords: kwList(kw) };
   }
 
-  // Défense en profondeur : l'UI vérifie aussi S.examLock avant d'écouter ou d'afficher quoi que ce soit.
-  async function checkLiveLock(signal) {
-    const lock = S.examLock;
-    if (!lock || typeof lock.check !== 'function') return;
-    let res = null;
-    try { res = await lock.check(); } catch (e) { res = null; }
-    checkAbort(signal);
-    if (!res || res.open !== true) throw err('LOCKED', LOCKED_MSG);
-  }
+ 
 
   // Côté élève, pendant un appel d'entraînement : réponse à dire au jury, en flux.
   async function liveAnswer(opts) {
