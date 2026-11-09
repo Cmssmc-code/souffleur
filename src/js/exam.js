@@ -1,14 +1,4 @@
-/* Souffleur — exam.js : simulateur d'oral blanc d'anglais des affaires (UE 218 du DSGC, Cnam Intec).
- * Écrans : accueil examen (''), choix du sujet et console jury ('oral'), sujet à partager ('sujet'),
- * entraînement solo ('eleve'), appel d'entraînement Teams ou Meet ('appel'), fiches de révision ('fiches'), historique ('historique').
- * Stockage : S.examStore (localStorage 'souffleur.exam.v1'). Données : S.examSubjects, S.examFiches. IA : S.examAI.
- * Éthique : l'aide en direct côté élève (réponse IA, traduction de la question du jury, mots clés, fenêtre flottante)
- * reste verrouillée jusqu'au jeudi 12/11/2026 14:00, heure de Paris, mesurée sur l'heure du serveur (S.examLock) :
- * l'oral officiel à distance était prévu le jeudi 12/11 à 10 h et un appel d'entraînement ne se distingue pas de cet oral.
- * Aucun contournement (réglage, paramètre d'URL, drapeau de stockage, interrupteur de test).
- * Côté jury, la réponse modèle d'une question suggérée par l'IA est disponible tout de suite. Celle d'une question
- * entendue (micro du jury seulement, jamais l'autre partie ni un micro mêlé) suit le même verrou : avec des
- * haut-parleurs, ce micro capte aussi l'autre partie. */
+
 (function (S) {
   'use strict';
 
@@ -147,47 +137,7 @@
     </div>`;
   }
 
-  /* Verrou de l'aide en direct côté élève : ouverte le jeudi 12/11/2026 à 14:00 (Paris), d'après l'heure du serveur
-     (en-tête Date d'une requête HEAD sans cache). Cette heure est rattachée à performance.now() : changer l'horloge
-     du PC après coup n'ouvre rien. Sans réponse du serveur ni lecture antérieure : horloge du PC. */
-  const LOCK_TTL = 10 * 60e3;
-  const mono = () => (window.performance && performance.now ? performance.now() : Date.now());
-  let lockRead = null; // { serverMs, perfAt, dateAt } : dernière heure du serveur
-  let lockPending = null;
-  function lockDecide(serverMs, localMs) {
-    const server = typeof serverMs === 'number' && isFinite(serverMs);
-    const now = server ? serverMs : Number(localMs);
-    return { open: isFinite(now) && now >= S.examLock.unlockAt, source: server ? 'server' : 'local', now };
-  }
-  async function lockProbe() {
-    if (!/^https?:$/.test(location.protocol)) return null;
-    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 6000);
-    const t0 = mono();
-    try {
-      const r = await fetch(new URL('sw.js?now=' + Date.now(), location.href).href, { method: 'HEAD', cache: 'no-store', signal: ctl ? ctl.signal : undefined });
-      const d = Date.parse(r.headers.get('date') || '');
-      const t1 = mono();
-      return isFinite(d) ? { serverMs: d + (t1 - t0) / 2, perfAt: t1, dateAt: Date.now() } : null;
-    } catch (e) { return null; } finally { clearTimeout(timer); }
-  }
-  const lockNow = () => (lockRead ? lockRead.serverMs + (mono() - lockRead.perfAt) : null);
-  async function lockCheck(o) {
-    const age = lockRead ? mono() - lockRead.perfAt : Infinity;
-    // Lecture fraîche, sauf si l'horloge murale a sauté (veille, changement d'heure) : on redemande au serveur.
-    const fresh = lockRead && age >= 0 && age < LOCK_TTL && Math.abs(Date.now() - lockRead.dateAt - age) < 60e3;
-    if (!fresh || (o && o.force)) {
-      if (!lockPending) lockPending = lockProbe().then((r) => { if (r) lockRead = r; lockPending = null; });
-      await lockPending;
-    }
-    return lockDecide(lockNow(), Date.now());
-  }
-  Object.defineProperty(S, 'examLock', {
-    enumerable: true,
-    value: Object.freeze({ unlockAt: Date.UTC(2026, 10, 12, 13, 0, 0), label: 'jeudi 12 novembre 2026 à 14 h', decide: lockDecide, check: lockCheck })
-  });
-  const lockLocalOpen = () => Date.now() >= S.examLock.unlockAt;
-  const HEARD_LOCK_NOTE = 'Réponse attendue sur une question entendue : à partir du jeudi 12 novembre à 14 h. Le bouton « Réponse modèle » marche dès maintenant.';
+  
 
   /* ====================================================================== *
    *  Données (sujets, fiches, thèmes)
