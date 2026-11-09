@@ -2,11 +2,7 @@
   'use strict';
   /* Souffleur — S.examAI : IA de l'oral blanc d'anglais des affaires (UE 218 DSGC / UE6 DSCG).
      Toutes les fonctions s'appuient sur S.ai.generate (bascule multi-fournisseurs, JSON tolérant).
-     Règle éthique : l'aide en direct côté élève (liveAnswer, tirée de ce que dit l'autre partie de l'appel)
-     reste verrouillée jusqu'au jeudi 12/11/2026 14:00, heure de Paris, mesurée sur l'heure du serveur
-     (S.examLock, défini dans exam.js et vérifié ici avant tout appel) : l'oral officiel à distance était
-     prévu le jeudi 12/11 à 10 h et le logiciel ne distingue pas un appel d'entraînement de cet oral.
-     Aucun contournement (réglage, paramètre d'URL, drapeau de stockage, interrupteur de test).
+     
      Côté jury : notes en direct et questions à poser tout de suite ; réponse attendue (juryAnswer)
      tout de suite pour une question suggérée par l'IA, et pour une question entendue au micro du jury
      (jamais l'autre partie ni un micro mêlé) seulement après l'ouverture (contrôlé dans exam.js). Les corrections pour
@@ -801,7 +797,7 @@
 
   /* ------------------------------------------- aide en direct (appel, jury) */
 
-  const LOCKED_MSG = 'Réponses en direct disponibles à partir du jeudi 12 novembre 2026 à 14 h.';
+
   const KW_LINE = /(?:^|\s)[*_#>\s-]*(?:key ?words?|key expressions?|useful expressions?)\s*\**\s*[:：]/i;
   // « — » seul = pas une question ; « — (remarque) » court aussi (jamais le début d'une vraie réponse).
   const isSkip = t => /^[—–-]{1,3}$/.test(t) || (/^[—–]/.test(t) && t.length < 120);
